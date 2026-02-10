@@ -38,13 +38,3 @@
 # Editor swap/backup files
 *~
 *.swp
-
-# Ignore any nested git repositories (vendored deps)
-**/.git
-**/.git/*
-**/.gitignore
-**/.gitmodules
-
-.git
-.git/*
-.gitmodules
