@@ -1,0 +1,40 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage output
+*.test
+*.out
+
+# Build directories
+/bin/
+/obj/
+
+# Coverage folder
+/coverage/*
+!/coverage/.gitkeep
+
+# Dependency directory (if you vendor your modules)
+/vendor/
+
+# Go workspace file (if you use go.work)
+/go.work
+
+# IDE/editor directories and files
+.vscode/
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editor swap/backup files
+*~
+*.swp

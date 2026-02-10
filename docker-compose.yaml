@@ -1,0 +1,48 @@
+services:
+  omniq-redis:
+    image: redis:7.4-alpine
+    container_name: omniq-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  omniq-valkey:
+    image: valkey/valkey:9-alpine
+    container_name: omniq-valkey
+    ports:
+      - "6380:6379"
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey_data:/data
+
+  omniq-python:
+    image: python:3.12-slim
+    container_name: omniq-python
+    working_dir: /app
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./:/app
+    depends_on:
+      - omniq-redis
+    command: ["bash", "-lc", "tail -f /dev/null"]
+
+  omniq-go:
+    image: golang:1.24-alpine
+    container_name: omniq-go
+    working_dir: /app
+    depends_on:
+      - omniq-redis
+    volumes:
+      - ./:/app
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    command: ["sh", "-lc", "apk add --no-cache git && tail -f /dev/null"]
+
+volumes:
+  redis_data:
+  valkey_data:
+  go_mod_cache:
+  go_build_cache:
