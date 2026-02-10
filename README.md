@@ -32,13 +32,8 @@ Core project / protocol docs:
 ## Install
 
 ```bash
-go get github.com/not-empty/omniq-go@latest
+go get github.com/not-empty/omniq-go
 ```
-
-> During early development you may publish `v0.0.0` or pre-releases.
-> Once stable, release `v1.x.y` to match the Python client.
-
----
 
 ## Quick start
 
