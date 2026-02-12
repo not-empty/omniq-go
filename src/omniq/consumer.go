@@ -44,7 +44,6 @@ func startHeartbeater(
 	go func() {
 		defer close(h.doneCh)
 
-		// Immediate heartbeat once (same as Python).
 		if _, err := ops.Heartbeat(queue, jobID, leaseToken, 0); err != nil {
 			if markLostIfLease(err) {
 				return
@@ -194,16 +193,12 @@ func startSignalLoop(opts ConsumeOpts) (*atomic.Bool, *atomic.Int32) {
 
 			case os.Interrupt:
 				n := sigintCount.Add(1)
-
-				// Drain=false should be immediate hard exit even if handler is running.
 				if !opts.Drain {
 					if opts.Verbose {
 						safeLog(opts.Logger, fmt.Sprintf("[consume] SIGINT; hard exit now (drain=false). queue=%s", opts.Queue))
 					}
 					os.Exit(130)
 				}
-
-				// Drain=true: first Ctrl+C requests stop, second hard-exits.
 				if n >= 2 {
 					if opts.Verbose {
 						safeLog(opts.Logger, fmt.Sprintf("[consume] SIGINT x2; hard exit now. queue=%s", opts.Queue))
@@ -243,7 +238,7 @@ func handleReservedJob(
 	opts ConsumeOpts,
 	v ReserveJob,
 	stopRequested *atomic.Bool,
-	_ *atomic.Int32, // kept for parity / future hooks; avoids "not used" warnings when toggling
+	_ *atomic.Int32,
 ) bool {
 	if strings.TrimSpace(v.LeaseToken) == "" {
 		if opts.Verbose {
@@ -252,9 +247,6 @@ func handleReservedJob(
 		time.Sleep(200 * time.Millisecond)
 		return false
 	}
-
-	// If a stop was requested via SIGTERM (or drain=true first SIGINT),
-	// and drain=false, exit after reserve (Python parity).
 	if stopRequested.Load() && !opts.Drain {
 		if opts.Verbose {
 			safeLog(opts.Logger, fmt.Sprintf("[consume] stop requested; fast-exit after reserve job_id=%s", v.JobID))
@@ -262,7 +254,7 @@ func handleReservedJob(
 		return true
 	}
 
-	ctx := buildJobCtx(opts.Queue, v)
+	ctx := buildJobCtx(ops, opts.Queue, v)
 
 	if opts.Verbose {
 		logReceived(opts, ctx)
@@ -271,14 +263,24 @@ func handleReservedJob(
 	hbS := deriveHBInterval(ops, opts, v.JobID)
 	hb := startHeartbeater(ops, opts.Queue, v.JobID, v.LeaseToken, hbS)
 
-	handlerErr := opts.Handler(ctx)
+	var recovered any
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				recovered = r
+			}
+		}()
+		opts.Handler(ctx)
+	}()
+
 
 	stopHeartbeater(hb)
 
-	if handlerErr == nil {
+	if recovered == nil {
 		ackSuccess(ops, opts, v, ctx, hb)
 	} else {
-		ackFail(ops, opts, v, ctx, hb, handlerErr)
+		ackFail(ops, opts, v, ctx, hb, recovered)
 	}
 
 	if stopRequested.Load() && opts.Drain {
@@ -291,7 +293,7 @@ func handleReservedJob(
 	return false
 }
 
-func buildJobCtx(queue string, v ReserveJob) JobCtx {
+func buildJobCtx(ops *OmniqOps, queue string, v ReserveJob) JobCtx {
 	var payloadObj any
 	if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
 		payloadObj = v.Payload
@@ -306,6 +308,7 @@ func buildJobCtx(queue string, v ReserveJob) JobCtx {
 		LockUntilMs: v.LockUntilMs,
 		LeaseToken:  v.LeaseToken,
 		GID:         v.GID,
+		CheckCompletion: newCheckCompletion(ops, v.JobID),
 	}
 }
 
@@ -325,7 +328,7 @@ func deriveHBInterval(ops *OmniqOps, opts ConsumeOpts, jobID string) float64 {
 	if opts.HeartbeatIntervalS != nil {
 		return *opts.HeartbeatIntervalS
 	}
-	tmo, _ := ops.JobTimeoutMs(opts.Queue, jobID, 60_000)
+	tmo, _ := ops.JobTimeout(opts.Queue, jobID, 60_000)
 	return DeriveHeartbeatIntervalS(tmo)
 }
 
@@ -352,27 +355,36 @@ func ackSuccess(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *h
 	}
 }
 
-func ackFail(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *heartbeatHandle, handlerErr error) {
-	if hb.lost.Load() {
-		return
-	}
+func ackFail(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *heartbeatHandle, recovered any) {
+    if hb.lost.Load() {
+        return
+    }
 
-	errS := fmt.Sprintf("%T: %v", handlerErr, handlerErr)
-	res2, err2 := ops.AckFail(opts.Queue, v.JobID, v.LeaseToken, &errS, 0)
+    var errS string
+    switch t := recovered.(type) {
+    case error:
+        errS = fmt.Sprintf("%T: %v", t, t)
+    case string:
+        errS = "panic: " + t
+    default:
+        errS = fmt.Sprintf("panic: %T: %v", recovered, recovered)
+    }
 
-	if !opts.Verbose {
-		return
-	}
+    res2, err2 := ops.AckFail(opts.Queue, v.JobID, v.LeaseToken, &errS, 0)
 
-	if err2 != nil {
-		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail error job_id=%s: %v", ctx.JobID, err2))
-		return
-	}
+    if !opts.Verbose {
+        return
+    }
+    if err2 != nil {
+        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail error job_id=%s: %v", ctx.JobID, err2))
+        return
+    }
 
-	if res2.Status == AckRetry && res2.NextRunAtMs != nil {
-		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => RETRY due_ms=%d", ctx.JobID, *res2.NextRunAtMs))
-	} else {
-		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => FAILED", ctx.JobID))
-	}
-	safeLog(opts.Logger, fmt.Sprintf("[consume] error job_id=%s => %s", ctx.JobID, errS))
+    if res2.Status == AckRetry && res2.NextRunAtMs != nil {
+        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => RETRY due_ms=%d", ctx.JobID, *res2.NextRunAtMs))
+    } else {
+        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => FAILED", ctx.JobID))
+    }
+    safeLog(opts.Logger, fmt.Sprintf("[consume] error job_id=%s => %s", ctx.JobID, errS))
 }
+

@@ -1,33 +1,42 @@
 # OmniQ (Go)
 
-**OmniQ** is a Redis + Lua, language-agnostic job queue.
+**OmniQ** is a Redis + Lua, language-agnostic job queue.\
 This package is the **Go client** for **OmniQ v1**.
 
-Core project / protocol docs:
-[https://github.com/not-empty/omniq](https://github.com/not-empty/omniq)
+Core project / protocol docs:\
+https://github.com/not-empty/omniq
 
----
+------------------------------------------------------------------------
 
 ## Key ideas
 
-* **Hybrid lanes**
+### Hybrid lanes
 
-  * Ungrouped jobs by default
-  * Optional **grouped jobs** (FIFO per group + per-group concurrency)
-* **Lease-based execution**
+-   Ungrouped jobs by default
+-   Optional **grouped jobs** (FIFO per group + per-group concurrency)
 
-  * Workers reserve jobs with a time-limited lease
-* **Token-gated ACK / heartbeat**
+### Lease-based execution
 
-  * `reserve()` returns a `lease_token`
-  * `heartbeat()` and `ack_*()` must include the same token
-* **Pause / resume (flag-only)**
+-   Workers reserve jobs with a time-limited lease
 
-  * Pausing blocks *new reserves*
-  * Running jobs are **not** interrupted
-  * Jobs are **not moved**
+### Token-gated ACK / heartbeat
 
----
+-   `reserve()` returns a `lease_token`
+-   `heartbeat()` and `ack_*()` must include the same token
+
+### Pause / resume (flag-only)
+
+-   Pausing blocks *new reserves*
+-   Running jobs are **not** interrupted
+-   Jobs are **not moved**
+
+### CheckCompletion (fan-out coordination)
+
+-   Lightweight Redis-based counter
+-   Useful for parent → child job orchestration
+-   Last child can detect completion safely
+
+------------------------------------------------------------------------
 
 ## Install
 
@@ -39,226 +48,184 @@ go get github.com/not-empty/omniq-go
 
 ### Publish
 
-```go
+``` go
 package main
 
 import (
-	"fmt"
-	"log"
+    "fmt"
+    "log"
 
-	"github.com/not-empty/omniq-go/omniq"
+    "github.com/not-empty/omniq-go/omniq"
 )
 
 func main() {
-	client, err := omniq.NewClient(omniq.ClientOpts{
-		RedisURL: "redis://localhost:6379/0",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+    client, err := omniq.NewClient(omniq.ClientOpts{
+        RedisURL: "redis://localhost:6379/0",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	jobID, err := client.Publish(omniq.PublishOpts{
-		Queue:   "demo",
-		Payload: map[string]any{"hello": "world"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+    jobID, err := client.Publish(omniq.PublishOpts{
+        Queue:   "demo",
+        Payload: map[string]any{"hello": "world"},
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	fmt.Println("OK", jobID)
+    fmt.Println("OK", jobID)
 }
 ```
 
----
+------------------------------------------------------------------------
 
 ### Consume
 
-```go
-package main
+``` go
+client.Consume(omniq.ConsumeOpts{
+    Queue: "demo",
+    Handler: func(ctx omniq.JobCtx) {
+        // Success: just return
+        // Failure: panic(...) to trigger retry / fail
+    },
+    Verbose: true,
+    Drain:   false,
+})
+```
 
-import (
-	"log"
-	"time"
+------------------------------------------------------------------------
 
-	"github.com/not-empty/omniq-go/omniq"
-)
+## Handler behavior (Go version)
 
-func main() {
-	client, err := omniq.NewClient(omniq.ClientOpts{
-		RedisURL: "redis://localhost:6379/0",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+In Go:
 
-	client.Consume(omniq.ConsumeOpts{
-		Queue: "demo",
-		Handler: func(ctx omniq.JobCtx) error {
-			log.Println("Waiting 2 seconds")
-			time.Sleep(2 * time.Second)
-			log.Println("Done")
-			return nil
-		},
-		Verbose: true,
-		Drain:   false,
-	})
+1.  **Success** → just `return`
+2.  **Failure / retry** → `panic(...)`
+3.  Panic is automatically converted into `ACK_FAIL`
+
+Example:
+
+``` go
+Handler: func(ctx omniq.JobCtx) {
+    if somethingWentWrong {
+        panic("database error")
+    }
 }
 ```
 
----
+Go already requires checking `err != nil` everywhere,\
+so OmniQ follows idiomatic Go style.
 
-## Client initialization
+------------------------------------------------------------------------
 
-You may connect using **Redis URL** or explicit host/port credentials.
+## CheckCompletion (fan-out pattern)
 
-```go
-// Option A: Redis URL (recommended)
-client, err := omniq.NewClient(omniq.ClientOpts{
-	RedisURL: "redis://:password@localhost:6379/0",
-})
+Used when a parent job creates multiple child jobs.
 
-// Option B: Host / port
-client, err := omniq.NewClient(omniq.ClientOpts{
-	Host: "localhost",
-	Port: 6379,
-	DB:   0,
-})
+### Parent
+
+``` go
+ctx.CheckCompletion.InitJobCounter("doc:123", 5)
 ```
 
-The client automatically:
+### Child
 
-* Loads Lua scripts
-* Handles `NOSCRIPT` fallback transparently
+``` go
+remaining := ctx.CheckCompletion.JobDecrement("doc:123")
 
----
+if remaining == 0 {
+    // Last child finished
+}
+```
+
+### Safety behavior
+
+If Redis key is missing or any internal error occurs:
+
+-   `Decrement()` returns `-1`
+-   No panic
+-   No duplicate last-job trigger
+
+This avoids duplicated business execution on retries.
+
+------------------------------------------------------------------------
 
 ## Publish API
 
-Publishing uses a **named options struct** to avoid parameter ordering mistakes.
-
-```go
+``` go
 jobID, err := client.Publish(omniq.PublishOpts{
-	Queue:       "demo",                 // required
-	Payload:     map[string]any{...},    // required (structured JSON)
-	JobID:       "",                     // optional (ULID auto-generated)
-	MaxAttempts: 3,
-	TimeoutMs:   60_000,
-	BackoffMs:   5_000,
-	DueMs:       0,                      // schedule in future (ms epoch)
-	GID:         "company:acme",          // optional group id
-	GroupLimit:  2,                      // per-group concurrency
+    Queue:       "demo",
+    Payload:     map[string]any{"k": "v"},
+    MaxAttempts: 3,
+    Timeout:     60_000,
+    Backoff:     5_000,
+    DueMs:       0,
+    GID:         "group:acme",
+    GroupLimit:  2,
 })
 ```
 
-### Notes
+Notes:
 
-* `Payload` **must** be structured JSON (`map` or `slice`)
-* Passing raw strings is an error
-  Wrap them instead:
+-   Payload must be structured JSON (`map` or `slice`)
+-   Raw string payloads are not allowed
 
-  ```go
-  Payload: map[string]any{"text": "hello"}
-  ```
+------------------------------------------------------------------------
 
----
+## Grouped jobs
 
-## Consume helper
-
-`Consume()` is a convenience loop that:
-
-* Promotes delayed jobs
-* Reaps expired leases
-* Reserves jobs
-* Runs your handler
-* Heartbeats during execution
-* ACKs success or failure using the lease token
-
-```go
-client.Consume(omniq.ConsumeOpts{
-	Queue: "demo",
-
-	Handler: handler,
-
-	PollIntervalS:     0.05,
-	PromoteIntervalS:  1.0,
-	PromoteBatch:      1000,
-	ReapIntervalS:     1.0,
-	ReapBatch:         1000,
-
-	HeartbeatIntervalS: nil, // derived from timeout
-	Verbose:             false,
-	Drain:               true,
-})
-```
-
-### Drain behavior
-
-* `Drain = true`
-  Ctrl+C finishes the current job, then exits
-* `Drain = false`
-  Ctrl+C exits immediately after reserve
-
----
-
-## Handler context
-
-Your handler receives a `JobCtx`:
-
-* `Queue`
-* `JobID`
-* `PayloadRaw` (JSON string)
-* `Payload` (parsed)
-* `Attempt`
-* `LockUntilMs`
-* `LeaseToken`
-* `GID`
-
----
-
-## Grouped jobs (FIFO + concurrency)
-
-```go
+``` go
 client.Publish(omniq.PublishOpts{
-	Queue:      "demo",
-	Payload:    map[string]any{"i": 1},
-	GID:        "company:acme",
-	GroupLimit: 2,
-})
-
-client.Publish(omniq.PublishOpts{
-	Queue:   "demo",
-	Payload: map[string]any{"i": 2},
-	GID:     "company:acme",
+    Queue:      "demo",
+    Payload:    map[string]any{"i": 1},
+    GID:        "company:acme",
+    GroupLimit: 2,
 })
 ```
 
-* FIFO ordering **within** each group
-* Groups execute concurrently
-* Concurrency per group enforced by `group_limit`
+-   FIFO per group
+-   Concurrency enforced per group
+-   Groups run concurrently
 
----
+------------------------------------------------------------------------
 
 ## Pause / Resume
 
-Pause is a **queue-level flag**.
-
-```go
+``` go
 client.Pause("demo")
-
-paused, _ := client.IsPaused("demo")
-fmt.Println(paused) // true
-
 client.Resume("demo")
 ```
 
-Behavior:
+Pause:
 
-* Does **not** move jobs
-* Does **not** interrupt running jobs
-* Blocks only new reserves
+-   Blocks new reserves
+-   Does not interrupt running jobs
+-   Does not move jobs
 
----
+------------------------------------------------------------------------
+
+## Consume options
+
+``` go
+client.Consume(omniq.ConsumeOpts{
+    Queue: "demo",
+    Handler: handler,
+
+    PollIntervalS:      0.05,
+    PromoteIntervalS:   1.0,
+    PromoteBatch:       1000,
+    ReapIntervalS:      1.0,
+    ReapBatch:          1000,
+    HeartbeatIntervalS: nil,
+
+    Verbose: true,
+    Drain:   true,
+})
+```
+
+------------------------------------------------------------------------
 
 ## License
 
-See the repository license.
+See repository license.

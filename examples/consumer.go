@@ -20,16 +20,14 @@ func main() {
 		Queue: "demo",
 		Verbose: true,
 		Drain: true,
-		Handler: func(ctx omniq.JobCtx) error {
+		Handler: func(ctx omniq.JobCtx) {
 			log.Printf("job received: id=%s attempt=%d payload=%v",
 				ctx.JobID, ctx.Attempt, ctx.Payload)
 
+			// panic("error") you need to trigger a panic to fail the job
 			time.Sleep(2 * time.Second)
 			log.Println("done")
-			return nil
+			return
 		},
 	})
-	if err != nil {
-		log.Fatalf("consume error: %v", err)
-	}
 }
