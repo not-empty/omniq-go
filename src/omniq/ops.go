@@ -32,16 +32,16 @@ func (o *OmniqOps) evalShaWithNoScriptFallback(sha, src string, numkeys int, key
 }
 
 type PublishOpts struct {
-	Queue         string
-	Payload       any
-	JobID         string
-	MaxAttempts   int
-	TimeoutMs     int64
-	BackoffMs     int64
-	DueMs         int64
-	NowMsOverride int64
-	GID           string
-	GroupLimit    int
+	Queue         	string
+	Payload       	any
+	JobID         	string
+	MaxAttempts   	int
+	Timeout			int64
+	Backoff			int64
+	DueMs         	int64
+	NowMsOverride 	int64
+	GID           	string
+	GroupLimit    	int
 }
 
 func (o *OmniqOps) Publish(opts PublishOpts) (string, error) {
@@ -64,11 +64,11 @@ func (o *OmniqOps) Publish(opts PublishOpts) (string, error) {
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = 3
 	}
-	if opts.TimeoutMs <= 0 {
-		opts.TimeoutMs = 30_000
+	if opts.Timeout <= 0 {
+		opts.Timeout = 30_000
 	}
-	if opts.BackoffMs <= 0 {
-		opts.BackoffMs = 5_000
+	if opts.Backoff <= 0 {
+		opts.Backoff = 5_000
 	}
 
 	anchor := QueueAnchor(opts.Queue)
@@ -99,8 +99,8 @@ func (o *OmniqOps) Publish(opts PublishOpts) (string, error) {
 		jid,
 		payloadS,
 		strconv.Itoa(opts.MaxAttempts),
-		strconv.FormatInt(opts.TimeoutMs, 10),
-		strconv.FormatInt(opts.BackoffMs, 10),
+		strconv.FormatInt(opts.Timeout, 10),
+		strconv.FormatInt(opts.Backoff, 10),
 		strconv.FormatInt(nms, 10),
 		strconv.FormatInt(opts.DueMs, 10),
 		gidS,
@@ -459,7 +459,7 @@ func (o *OmniqOps) ReapExpired(queue string, maxReap int, nowMsOverride int64) (
 	return n, nil
 }
 
-func (o *OmniqOps) JobTimeoutMs(queue, jobID string, defaultMs int64) (int64, error) {
+func (o *OmniqOps) JobTimeout(queue, jobID string, defaultMs int64) (int64, error) {
 	if defaultMs <= 0 {
 		defaultMs = 60_000
 	}
@@ -483,11 +483,318 @@ func (o *OmniqOps) JobTimeoutMs(queue, jobID string, defaultMs int64) (int64, er
 	return defaultMs, nil
 }
 
+func (o *OmniqOps) RetryFailed(queue, jobID string, nowMsOverride int64) error {
+	anchor := QueueAnchor(queue)
+
+	nms := nowMsOverride
+	if nms <= 0 {
+		nms = NowMs()
+	}
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.RetryFailed.SHA,
+		o.Scripts.RetryFailed.Src,
+		1,
+		anchor,
+		jobID,
+		strconv.FormatInt(nms, 10),
+	)
+	if err != nil {
+		return err
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok || len(arr) < 1 {
+		return fmt.Errorf("Unexpected RETRY_FAILED response: %v", res)
+	}
+
+	switch AsStr(arr[0]) {
+	case "OK":
+		return nil
+
+	case "ERR":
+		reason := "UNKNOWN"
+		if len(arr) > 1 {
+			reason = AsStr(arr[1])
+		}
+		return fmt.Errorf("RETRY_FAILED failed: %s", reason)
+
+	default:
+		return fmt.Errorf("Unexpected RETRY_FAILED response: %v", res)
+	}
+}
+
+func (o *OmniqOps) RetryFailedBatch(queue string, jobIDs []string, nowMsOverride int64) ([]BatchResult, error) {
+	if len(jobIDs) > 100 {
+		return nil, fmt.Errorf("RetryFailedBatch max is 100 job_ids per call")
+	}
+
+	anchor := QueueAnchor(queue)
+
+	nms := nowMsOverride
+	if nms <= 0 {
+		nms = NowMs()
+	}
+
+	argv := make([]any, 0, 2+len(jobIDs))
+	argv = append(argv, strconv.FormatInt(nms, 10))
+	argv = append(argv, strconv.Itoa(len(jobIDs)))
+	for _, id := range jobIDs {
+		argv = append(argv, id)
+	}
+
+	keysAndArgs := make([]any, 0, 1+len(argv))
+	keysAndArgs = append(keysAndArgs, anchor)
+	keysAndArgs = append(keysAndArgs, argv...)
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.RetryFailedBatch.SHA,
+		o.Scripts.RetryFailedBatch.Src,
+		1,
+		keysAndArgs...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok {
+		return nil, fmt.Errorf("Unexpected RETRY_FAILED_BATCH response: %v", res)
+	}
+
+	if len(arr) >= 2 && AsStr(arr[0]) == "ERR" {
+		reason := AsStr(arr[1])
+		extra := ""
+		if len(arr) > 2 {
+			extra = AsStr(arr[2])
+		}
+		msg := strings.TrimSpace(reason + " " + extra)
+		return nil, fmt.Errorf("RETRY_FAILED_BATCH failed: %s", msg)
+	}
+
+	out := make([]BatchResult, 0, len(jobIDs))
+	for i := 0; i < len(arr); {
+		if i+1 >= len(arr) {
+			return nil, fmt.Errorf("Unexpected RETRY_FAILED_BATCH response: %v", res)
+		}
+		jobID := AsStr(arr[i])
+		status := AsStr(arr[i+1])
+
+		if status == "ERR" {
+			reason := "UNKNOWN"
+			if i+2 < len(arr) {
+				reason = AsStr(arr[i+2])
+			}
+			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: reason})
+			i += 3
+		} else {
+			out = append(out, BatchResult{JobID: jobID, Status: status})
+			i += 2
+		}
+	}
+
+	return out, nil
+}
+
+func (o *OmniqOps) RemoveJob(queue, jobID, lane string) (string, error) {
+	anchor := QueueAnchor(queue)
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.RemoveJob.SHA,
+		o.Scripts.RemoveJob.Src,
+		1,
+		anchor,
+		jobID,
+		lane,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok || len(arr) < 1 {
+		return "", fmt.Errorf("Unexpected REMOVE_JOB response: %v", res)
+	}
+
+	switch AsStr(arr[0]) {
+	case "OK":
+		flags := ""
+		if len(arr) > 1 {
+			flags = AsStr(arr[1])
+		}
+		return flags, nil
+
+	case "ERR":
+		reason := "UNKNOWN"
+		if len(arr) > 1 {
+			reason = AsStr(arr[1])
+		}
+		return "", fmt.Errorf("REMOVE_JOB failed: %s", reason)
+
+	default:
+		return "", fmt.Errorf("Unexpected REMOVE_JOB response: %v", res)
+	}
+}
+
+func (o *OmniqOps) RemoveJobsBatch(queue string, lane string, jobIDs []string) ([]BatchResult, error) {
+	if len(jobIDs) > 100 {
+		return nil, fmt.Errorf("RemoveJobsBatch max is 100 job_ids per call")
+	}
+
+	anchor := QueueAnchor(queue)
+
+	argv := make([]any, 0, 2+len(jobIDs))
+	argv = append(argv, lane)
+	argv = append(argv, strconv.Itoa(len(jobIDs)))
+	for _, id := range jobIDs {
+		argv = append(argv, id)
+	}
+
+	keysAndArgs := make([]any, 0, 1+len(argv))
+	keysAndArgs = append(keysAndArgs, anchor)
+	keysAndArgs = append(keysAndArgs, argv...)
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.RemoveJobsBatch.SHA,
+		o.Scripts.RemoveJobsBatch.Src,
+		1,
+		keysAndArgs...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok {
+		return nil, fmt.Errorf("Unexpected REMOVE_JOBS_LANE_BATCH response: %v", res)
+	}
+
+	if len(arr) >= 2 && AsStr(arr[0]) == "ERR" {
+		reason := AsStr(arr[1])
+		extra := ""
+		if len(arr) > 2 {
+			extra = AsStr(arr[2])
+		}
+		msg := strings.TrimSpace(reason + " " + extra)
+		return nil, fmt.Errorf("REMOVE_JOBS_LANE_BATCH failed: %s", msg)
+	}
+
+	out := make([]BatchResult, 0, len(jobIDs))
+	for i := 0; i < len(arr); {
+		jobID := AsStr(arr[i])
+		status := AsStr(arr[i+1])
+
+		if status == "ERR" {
+			reason := "UNKNOWN"
+			if i+2 < len(arr) {
+				reason = AsStr(arr[i+2])
+			}
+			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: reason})
+			i += 3
+		} else {
+			out = append(out, BatchResult{JobID: jobID, Status: status})
+			i += 2
+		}
+	}
+
+	return out, nil
+}
+
+func (o *OmniqOps) CheckCompletionInitJobCounter(key string, expected int) error {
+	anchor, err := CheckCompletionAnchor(key)
+	if err != nil {
+		return err
+	}
+
+	if expected <= 0 {
+		return fmt.Errorf("check_completion expected must be > 0")
+	}
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.CheckCompletionInit.SHA,
+		o.Scripts.CheckCompletionInit.Src,
+		1,
+		anchor,
+		strconv.Itoa(expected),
+	)
+	if err != nil {
+		return err
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok || len(arr) < 1 {
+		return fmt.Errorf("Unexpected CHECK_COMPLETION_INIT response: %v", res)
+	}
+
+	switch AsStr(arr[0]) {
+	case "OK":
+		return nil
+
+	case "ERR":
+		reason := "UNKNOWN"
+		if len(arr) > 1 {
+			reason = AsStr(arr[1])
+		}
+		return fmt.Errorf("CHECK_COMPLETION_INIT failed: %s", reason)
+
+	default:
+		return fmt.Errorf("Unexpected CHECK_COMPLETION_INIT response: %v", res)
+	}
+}
+
+func (o *OmniqOps) CheckCompletionJobDecrement(key string, childID string) (int, error) {
+	anchor, err := CheckCompletionAnchor(key)
+	if err != nil {
+		return 0, err
+	}
+
+	cid := strings.TrimSpace(childID)
+	if cid == "" {
+		return 0, fmt.Errorf("check_completion child_id is required")
+	}
+
+	res, err := o.evalShaWithNoScriptFallback(
+		o.Scripts.CheckCompletionDecrement.SHA,
+		o.Scripts.CheckCompletionDecrement.Src,
+		1,
+		anchor,
+		cid,
+	)
+	if err != nil {
+		return -1, nil
+	}
+
+	arr, ok := asAnySlice(res)
+	if !ok || len(arr) < 1 {
+		return -1, nil
+	}
+
+	switch AsStr(arr[0]) {
+	case "OK":
+		if len(arr) < 2 {
+			return -1, nil
+		}
+		n, err := toInt(arr[1])
+		if err != nil {
+			return -1, nil
+		}
+		return n, nil
+
+	case "ERR":
+		return -1, nil
+
+	default:
+		return -1, nil
+	}
+}
+
+
+
 func PausedBackoffS(pollIntervalS float64) float64 {
 	return math.Max(0.25, pollIntervalS*10.0)
 }
 
-func DeriveHeartbeatIntervalS(timeoutMs int64) float64 {
-	half := math.Max(1.0, (float64(timeoutMs)/1000.0)/2.0)
+func DeriveHeartbeatIntervalS(timeout int64) float64 {
+	half := math.Max(1.0, (float64(timeout)/1000.0)/2.0)
 	return math.Max(1.0, math.Min(10.0, half))
 }

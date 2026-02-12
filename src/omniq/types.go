@@ -11,6 +11,7 @@ type JobCtx struct {
 	LockUntilMs int64
 	LeaseToken  string
 	GID         string
+	CheckCompletion *CheckCompletion
 }
 
 type ReserveStatus interface {
@@ -47,4 +48,10 @@ const (
 type AckFailResult struct {
 	Status      AckFailStatus
 	NextRunAtMs *int64
+}
+
+type BatchResult struct {
+	JobID  string
+	Status string
+	Reason string
 }

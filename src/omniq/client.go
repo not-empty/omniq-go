@@ -64,8 +64,6 @@ func QueueBaseName(queueName string) string {
 	return QueueBase(queueName)
 }
 
-// Publish matches the Consume() style: a single options object.
-// This avoids positional-arg mistakes and mirrors Python's named args.
 func (c *Client) Publish(opts PublishOpts) (string, error) {
 	return c.ops.Publish(opts)
 }
@@ -106,11 +104,28 @@ func (c *Client) IsPaused(queue string) (bool, error) {
 	return c.ops.IsPaused(queue)
 }
 
+func (c *Client) RetryFailed(queue string, jobID string) error {
+	return c.ops.RetryFailed(queue, jobID, 0)
+}
+
+func (c *Client) RetryFailedBatch(queue string, jobIDs []string) ([]BatchResult, error) {
+	return c.ops.RetryFailedBatch(queue, jobIDs, 0)
+}
+
+
+func (c *Client) RemoveJob(queue string, jobID string, lane string) (string, error) {
+	return c.ops.RemoveJob(queue, jobID, lane)
+}
+
+func (c *Client) RemoveJobsBatch(queue string, lane string, jobIDs []string) ([]BatchResult, error) {
+	return c.ops.RemoveJobsBatch(queue, lane, jobIDs)
+}
+
 type ConsumeLogger func(msg string)
 
 func DefaultConsumeLogger(msg string) { fmt.Println(msg) }
 
-type ConsumeHandler func(ctx JobCtx) error
+type ConsumeHandler func(ctx JobCtx)
 
 type ConsumeOpts struct {
 	Queue string

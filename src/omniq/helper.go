@@ -124,7 +124,6 @@ func splitKeysArgs(numkeys int, args []any) ([]string, []any) {
 	}
 
 	if numkeys > len(args) {
-		// Defensive: if caller lies, treat all as argv.
 		return nil, args
 	}
 
@@ -135,4 +134,23 @@ func splitKeysArgs(numkeys int, args []any) ([]string, []any) {
 
 	argv := args[numkeys:]
 	return keys, argv
+}
+
+func CheckCompletionAnchor(key string) (string, error) {
+	const maxLen = 128
+
+	k := strings.TrimSpace(key)
+	if k == "" {
+		return "", fmt.Errorf("check_completion key is required")
+	}
+
+	if strings.Contains(k, "{") || strings.Contains(k, "}") {
+		return "", fmt.Errorf("check_completion key must not contain '{' or '}'")
+	}
+
+	if len(k) > maxLen {
+		return "", fmt.Errorf("check_completion key too long (max %d chars)", maxLen)
+	}
+
+	return "{cc:" + k + "}:meta", nil
 }
