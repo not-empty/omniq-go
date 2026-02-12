@@ -40,11 +40,9 @@ https://github.com/not-empty/omniq
 
 ## Install
 
-``` bash
-go get github.com/not-empty/omniq-go@latest
+```bash
+go get github.com/not-empty/omniq-go
 ```
-
-------------------------------------------------------------------------
 
 ## Quick start
 
