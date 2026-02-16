@@ -5,13 +5,13 @@ type PayloadT any
 type JobCtx struct {
 	Queue        string
 	JobID        string
-	PayloadRaw  string
-	Payload     PayloadT
-	Attempt     int
-	LockUntilMs int64
-	LeaseToken  string
-	GID         string
-	CheckCompletion *CheckCompletion
+	PayloadRaw 	 string
+	Payload      PayloadT
+	Attempt      int
+	LockUntilMs  int64
+	LeaseToken   string
+	GID          string
+	Exec         *Exec
 }
 
 type ReserveStatus interface {

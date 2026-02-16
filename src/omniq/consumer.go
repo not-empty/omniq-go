@@ -254,7 +254,7 @@ func handleReservedJob(
 		return true
 	}
 
-	ctx := buildJobCtx(ops, opts.Queue, v)
+	ctx := buildJobCtx(ops, opts.Queue, v, opts.PublishDefaults)
 
 	if opts.Verbose {
 		logReceived(opts, ctx)
@@ -293,23 +293,25 @@ func handleReservedJob(
 	return false
 }
 
-func buildJobCtx(ops *OmniqOps, queue string, v ReserveJob) JobCtx {
-	var payloadObj any
-	if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
-		payloadObj = v.Payload
-	}
+func buildJobCtx(ops *OmniqOps, queue string, v ReserveJob, pubDefaults *PublishOpts) JobCtx {
+    var payloadObj any
+    if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
+        payloadObj = v.Payload
+    }
 
-	return JobCtx{
-		Queue:       queue,
-		JobID:       v.JobID,
-		PayloadRaw:  v.Payload,
-		Payload:     payloadObj,
-		Attempt:     v.Attempt,
-		LockUntilMs: v.LockUntilMs,
-		LeaseToken:  v.LeaseToken,
-		GID:         v.GID,
-		CheckCompletion: newCheckCompletion(ops, v.JobID),
-	}
+    exec := newExec(ops, pubDefaults, v.JobID)
+
+    return JobCtx{
+        Queue:       queue,
+        JobID:       v.JobID,
+        PayloadRaw:  v.Payload,
+        Payload:     payloadObj,
+        Attempt:     v.Attempt,
+        LockUntilMs: v.LockUntilMs,
+        LeaseToken:  v.LeaseToken,
+        GID:         v.GID,
+        Exec:        exec,
+    }
 }
 
 func logReceived(opts ConsumeOpts, ctx JobCtx) {

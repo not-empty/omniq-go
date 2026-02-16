@@ -700,19 +700,19 @@ func (o *OmniqOps) RemoveJobsBatch(queue string, lane string, jobIDs []string) (
 	return out, nil
 }
 
-func (o *OmniqOps) CheckCompletionInitJobCounter(key string, expected int) error {
-	anchor, err := CheckCompletionAnchor(key)
+func (o *OmniqOps) ChildsInit(key string, expected int) error {
+	anchor, err := ChildsAnchor(key)
 	if err != nil {
 		return err
 	}
 
 	if expected <= 0 {
-		return fmt.Errorf("check_completion expected must be > 0")
+		return fmt.Errorf("quantity expected must be > 0")
 	}
 
 	res, err := o.evalShaWithNoScriptFallback(
-		o.Scripts.CheckCompletionInit.SHA,
-		o.Scripts.CheckCompletionInit.Src,
+		o.Scripts.ChildsInit.SHA,
+		o.Scripts.ChildsInit.Src,
 		1,
 		anchor,
 		strconv.Itoa(expected),
@@ -723,7 +723,7 @@ func (o *OmniqOps) CheckCompletionInitJobCounter(key string, expected int) error
 
 	arr, ok := asAnySlice(res)
 	if !ok || len(arr) < 1 {
-		return fmt.Errorf("Unexpected CHECK_COMPLETION_INIT response: %v", res)
+		return fmt.Errorf("Unexpected CHILDS_INIT response: %v", res)
 	}
 
 	switch AsStr(arr[0]) {
@@ -735,27 +735,27 @@ func (o *OmniqOps) CheckCompletionInitJobCounter(key string, expected int) error
 		if len(arr) > 1 {
 			reason = AsStr(arr[1])
 		}
-		return fmt.Errorf("CHECK_COMPLETION_INIT failed: %s", reason)
+		return fmt.Errorf("CHILDS_INIT failed: %s", reason)
 
 	default:
-		return fmt.Errorf("Unexpected CHECK_COMPLETION_INIT response: %v", res)
+		return fmt.Errorf("Unexpected CHILDS_INIT response: %v", res)
 	}
 }
 
-func (o *OmniqOps) CheckCompletionJobDecrement(key string, childID string) (int, error) {
-	anchor, err := CheckCompletionAnchor(key)
+func (o *OmniqOps) ChildAck(key string, childID string) (int, error) {
+	anchor, err := ChildsAnchor(key)
 	if err != nil {
 		return 0, err
 	}
 
 	cid := strings.TrimSpace(childID)
 	if cid == "" {
-		return 0, fmt.Errorf("check_completion child_id is required")
+		return 0, fmt.Errorf("Child ack child_id is required")
 	}
 
 	res, err := o.evalShaWithNoScriptFallback(
-		o.Scripts.CheckCompletionDecrement.SHA,
-		o.Scripts.CheckCompletionDecrement.Src,
+		o.Scripts.ChildAck.SHA,
+		o.Scripts.ChildAck.Src,
 		1,
 		anchor,
 		cid,
@@ -787,8 +787,6 @@ func (o *OmniqOps) CheckCompletionJobDecrement(key string, childID string) (int,
 		return -1, nil
 	}
 }
-
-
 
 func PausedBackoffS(pollIntervalS float64) float64 {
 	return math.Max(0.25, pollIntervalS*10.0)

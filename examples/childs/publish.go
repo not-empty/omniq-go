@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 
+	// importing the lib
 	"github.com/not-empty/omniq-go"
 
 )
 
 func main() {
+	// creating OmniQ passing redis information
 	client, err := omniq.NewClient(omniq.ClientOpts{
 		Host: "omniq-redis",
 		Port: 6379,
@@ -17,9 +19,10 @@ func main() {
 		log.Fatalf("create client: %v", err)
 	}
 
+	// publishing the job
 	jobID, err := client.Publish(omniq.PublishOpts{
-		Queue: "demo",
-		Payload: map[string]any{"hello": "world"},
+		Queue: "documents",
+		Payload: map[string]any{"document_id": "doc-123", "pages": 5},
 		MaxAttempts: 3,
 	})
 	if err != nil {

@@ -28,8 +28,8 @@ type OmniqScripts struct {
 	RetryFailedBatch   	 		ScriptDef
 	RemoveJob 					ScriptDef
 	RemoveJobsBatch				ScriptDef
-	CheckCompletionInit			ScriptDef
-	CheckCompletionDecrement	ScriptDef
+	ChildsInit					ScriptDef
+	ChildAck					ScriptDef
 }
 
 func DefaultScriptsDir() string {
@@ -77,8 +77,8 @@ func LoadScripts(r RedisLike, scriptsDir string) (OmniqScripts, error) {
 	if s.RetryFailedBatch, err = loadOne("retry_failed_batch.lua"); err != nil { return s, err }
 	if s.RemoveJob, err = loadOne("remove_job.lua"); err != nil { return s, err }
 	if s.RemoveJobsBatch, err = loadOne("remove_jobs_batch.lua"); err != nil { return s, err }
-	if s.CheckCompletionInit, err = loadOne("check_completion_init.lua"); err != nil { return s, err }
-	if s.CheckCompletionDecrement, err = loadOne("check_completion_decrement.lua"); err != nil { return s, err }
+	if s.ChildsInit, err = loadOne("childs_init.lua"); err != nil { return s, err }
+	if s.ChildAck, err = loadOne("child_ack.lua"); err != nil { return s, err }
 
 	return s, nil
 }

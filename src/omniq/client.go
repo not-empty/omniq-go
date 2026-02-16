@@ -142,6 +142,8 @@ type ConsumeOpts struct {
 	Verbose bool
 	Logger  ConsumeLogger
 	Drain   bool
+
+	PublishDefaults *PublishOpts
 }
 
 func (c *Client) Consume(opts ConsumeOpts) error {
