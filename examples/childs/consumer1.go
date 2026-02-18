@@ -24,7 +24,6 @@ func documentWorker(ctx omniq.JobCtx) {
 
 	// calling the childs initialization
 	err := ctx.Exec.ChildsInit(key, p.Pages)
-	fmt.Println(err)
 	if err != nil {
 		panic("Error on init childs")
 	}
@@ -35,9 +34,9 @@ func documentWorker(ctx omniq.JobCtx) {
 		_, _ = ctx.Exec.Publish(omniq.PublishOpts{
 			Queue: "pages",
 			Payload: map[string]any{
-				"document_id":   p.DocumentID,
-				"page":          page,
-				"completion_key": key,
+				"document_id":	p.DocumentID,
+				"page":			page,
+				"key": 			key,
 			},
 		})
 		if err != nil {

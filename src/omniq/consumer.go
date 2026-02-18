@@ -103,7 +103,8 @@ func payloadPreview(payload any, maxLen int) string {
 	return s
 }
 
-func consumeLoop(ops *OmniqOps, opts ConsumeOpts) error {
+func consumeLoop(client *Client, opts ConsumeOpts) error {
+	ops := &client.ops
 	applyConsumeDefaults(&opts)
 
 	stopRequested, sigintCount := startSignalLoop(opts)
@@ -143,7 +144,7 @@ func consumeLoop(ops *OmniqOps, opts ConsumeOpts) error {
 			continue
 
 		case ReserveJob:
-			exitNow := handleReservedJob(ops, opts, v, stopRequested, sigintCount)
+			exitNow := handleReservedJob(client, ops, opts, v, stopRequested, sigintCount)
 			if exitNow {
 				return nil
 			}
@@ -234,6 +235,7 @@ func maybeReap(ops *OmniqOps, opts ConsumeOpts, now time.Time, last *time.Time) 
 }
 
 func handleReservedJob(
+	client *Client,
 	ops *OmniqOps,
 	opts ConsumeOpts,
 	v ReserveJob,
@@ -254,7 +256,7 @@ func handleReservedJob(
 		return true
 	}
 
-	ctx := buildJobCtx(ops, opts.Queue, v, opts.PublishDefaults)
+	ctx := buildJobCtx(client, opts.Queue, v, opts.PublishDefaults)
 
 	if opts.Verbose {
 		logReceived(opts, ctx)
@@ -293,13 +295,13 @@ func handleReservedJob(
 	return false
 }
 
-func buildJobCtx(ops *OmniqOps, queue string, v ReserveJob, pubDefaults *PublishOpts) JobCtx {
+func buildJobCtx(client *Client, queue string, v ReserveJob, pubDefaults *PublishOpts) JobCtx {
     var payloadObj any
     if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
         payloadObj = v.Payload
     }
 
-    exec := newExec(ops, pubDefaults, v.JobID)
+    exec := newExec(client, pubDefaults, v.JobID)
 
     return JobCtx{
         Queue:       queue,

@@ -1,6 +1,10 @@
 package omniq
 
-import "fmt"
+import (
+	"fmt"
+	"errors"
+	"encoding/json"
+)
 
 type Client struct {
 	ops OmniqOps
@@ -68,6 +72,36 @@ func (c *Client) Publish(opts PublishOpts) (string, error) {
 	return c.ops.Publish(opts)
 }
 
+func (c *Client) PublishJson(opts PublishOpts) (string, error) {
+	if opts.Payload == nil {
+		return "", errors.New("publish(payload=...) is required")
+	}
+
+	if isJSONStructured(opts.Payload) {
+		return c.Publish(opts)
+	}
+
+	b, err := json.Marshal(opts.Payload)
+	if err != nil {
+		return "", fmt.Errorf("publish_json(payload=...): failed to marshal payload to JSON: %w", err)
+	}
+
+	var structured any
+	if err := json.Unmarshal(b, &structured); err != nil {
+		return "", fmt.Errorf("publish_json(payload=...): failed to unmarshal payload as JSON: %w", err)
+	}
+
+	if !isJSONStructured(structured) {
+		return "", errors.New(
+			"publish_json(payload=...) must encode to a dict or list (structured JSON). " +
+				"Wrap scalars as {'value': ...} or {'text': '...'}",
+		)
+	}
+
+	opts.Payload = structured
+	return c.Publish(opts)
+}
+
 func (c *Client) Reserve(queue string, nowMsOverride int64) (ReserveResult, error) {
 	return c.ops.Reserve(queue, nowMsOverride)
 }
@@ -121,6 +155,14 @@ func (c *Client) RemoveJobsBatch(queue string, lane string, jobIDs []string) ([]
 	return c.ops.RemoveJobsBatch(queue, lane, jobIDs)
 }
 
+func (c *Client) ChildsInit(key string, expected int) error {
+	return c.ops.ChildsInit(key, expected)
+}
+
+func (c *Client) ChildAck(key string, childID string) (int, error) {
+	return c.ops.ChildAck(key, childID)
+}
+
 type ConsumeLogger func(msg string)
 
 func DefaultConsumeLogger(msg string) { fmt.Println(msg) }
@@ -147,7 +189,7 @@ type ConsumeOpts struct {
 }
 
 func (c *Client) Consume(opts ConsumeOpts) error {
-	return consumeLoop(&c.ops, opts)
+	return consumeLoop(c, opts)
 }
 
 func (c *Client) Ops() *OmniqOps {

@@ -26,7 +26,10 @@ func pageWorker(ctx omniq.JobCtx) {
 	time.Sleep(1500 * time.Millisecond)
 
 	// acking itself as a child the number of remaining jobs are returned so we can say when the last job was executed
-	remaining, _ := ctx.Exec.ChildAck(p.Key)
+	remaining, err := ctx.Exec.ChildAck(p.Key)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Printf("[page_worker] Page %d done. Remaining=%d\n", p.Page, remaining)
 
