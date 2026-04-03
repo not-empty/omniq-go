@@ -526,7 +526,7 @@ func (o *OmniqOps) RetryFailed(queue, jobID string, nowMsOverride int64) error {
 
 func (o *OmniqOps) RetryFailedBatch(queue string, jobIDs []string, nowMsOverride int64) ([]BatchResult, error) {
 	if len(jobIDs) > 100 {
-		return nil, fmt.Errorf("RetryFailedBatch max is 100 job_ids per call")
+		return nil, fmt.Errorf("retry_failed_batch max is 100 job_ids per call")
 	}
 
 	anchor := QueueAnchor(queue)
@@ -585,7 +585,7 @@ func (o *OmniqOps) RetryFailedBatch(queue string, jobIDs []string, nowMsOverride
 			if i+2 < len(arr) {
 				reason = AsStr(arr[i+2])
 			}
-			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: reason})
+			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: &reason})
 			i += 3
 		} else {
 			out = append(out, BatchResult{JobID: jobID, Status: status})
@@ -618,11 +618,7 @@ func (o *OmniqOps) RemoveJob(queue, jobID, lane string) (string, error) {
 
 	switch AsStr(arr[0]) {
 	case "OK":
-		flags := ""
-		if len(arr) > 1 {
-			flags = AsStr(arr[1])
-		}
-		return flags, nil
+		return "OK", nil
 
 	case "ERR":
 		reason := "UNKNOWN"
@@ -638,7 +634,7 @@ func (o *OmniqOps) RemoveJob(queue, jobID, lane string) (string, error) {
 
 func (o *OmniqOps) RemoveJobsBatch(queue string, lane string, jobIDs []string) ([]BatchResult, error) {
 	if len(jobIDs) > 100 {
-		return nil, fmt.Errorf("RemoveJobsBatch max is 100 job_ids per call")
+		return nil, fmt.Errorf("remove_jobs_batch max is 100 job_ids per call")
 	}
 
 	anchor := QueueAnchor(queue)
@@ -689,7 +685,7 @@ func (o *OmniqOps) RemoveJobsBatch(queue string, lane string, jobIDs []string) (
 			if i+2 < len(arr) {
 				reason = AsStr(arr[i+2])
 			}
-			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: reason})
+			out = append(out, BatchResult{JobID: jobID, Status: status, Reason: &reason})
 			i += 3
 		} else {
 			out = append(out, BatchResult{JobID: jobID, Status: status})

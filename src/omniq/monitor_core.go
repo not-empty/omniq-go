@@ -130,6 +130,11 @@ func monitorAsString(v any) string {
 		return t
 	case []byte:
 		return string(t)
+	case *string:
+		if t == nil {
+			return ""
+		}
+		return *t
 	default:
 		return ""
 	}
@@ -191,6 +196,11 @@ func (m *MonitorCore) readJobMap(base string, jobID string) map[string]string {
 	}
 
 	return raw
+}
+
+func (m *MonitorCore) isGroupReady(base string, gid string) bool {
+	score, err := m.r.ZScore(m.readyKey(base), gid)
+	return err == nil && score != nil
 }
 
 func (m *MonitorCore) jobInfoFromMap(jobID string, mm map[string]string) JobInfo {
@@ -377,12 +387,6 @@ func (m *MonitorCore) GroupStatus(queue string, gids []string, defaultLimit int)
 		normalized = normalized[:monitorMaxGroupLimit]
 	}
 
-	readyIDs := m.GroupsReady(queue, 0, monitorMax(len(normalized), 1))
-	readySet := make(map[string]struct{}, len(readyIDs))
-	for _, gid := range readyIDs {
-		readySet[gid] = struct{}{}
-	}
-
 	out := make([]GroupStatus, 0, len(normalized))
 	for _, gid := range normalized {
 		inflightRaw, err := m.r.Get(m.ginflightKey(base, gid))
@@ -405,13 +409,11 @@ func (m *MonitorCore) GroupStatus(queue string, gids []string, defaultLimit int)
 			limitValue = int64(defaultLimit)
 		}
 
-		_, ready := readySet[gid]
-
 		out = append(out, GroupStatus{
 			GID:          gid,
 			Inflight:     monitorToInt64(inflightRaw, 0),
 			Limit:        limitValue,
-			Ready:        ready,
+			Ready:        m.isGroupReady(base, gid),
 			WaitingCount: waitingCount,
 		})
 	}

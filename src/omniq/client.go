@@ -114,8 +114,8 @@ func (c *Client) AckSuccess(queue, jobID, leaseToken string, nowMsOverride int64
 	return c.ops.AckSuccess(queue, jobID, leaseToken, nowMsOverride)
 }
 
-func (c *Client) AckFail(queue, jobID, leaseToken string, nowMsOverride int64) (AckFailResult, error) {
-	return c.ops.AckFail(queue, jobID, leaseToken, nil, nowMsOverride)
+func (c *Client) AckFail(queue, jobID, leaseToken string, errMsg *string, nowMsOverride int64) (AckFailResult, error) {
+	return c.ops.AckFail(queue, jobID, leaseToken, errMsg, nowMsOverride)
 }
 
 func (c *Client) PromoteDelayed(queue string, maxPromote int, nowMsOverride int64) (int, error) {
