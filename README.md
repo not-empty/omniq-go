@@ -18,12 +18,25 @@ https://github.com/not-empty/omniq
 
 ------------------------------------------------------------------------
 
-## Requirements
-To use OmniQ-Go, you must have:
-- Go 1.20+
-- Redis >= 7.0
-- Lua scripting enabled in Redis (default configuration)
-- OmniQ scripts previously loaded into Redis
+## Versioning
+
+OmniQ is a multi-language system (Go, Node.js, Python), so versions are aligned across SDKs.
+
+The Go module stays on `v1`:
+
+### Convention
+
+We use minor versions in multiples of 10 to represent ecosystem milestones:
+
+* `v1.x.x` → OmniQ v1
+* `v1.20.x` → OmniQ v2
+* `v1.30.x` → OmniQ v3
+
+### Recommendation
+
+We strongly advise locking your minor version to avoid unexpected behavior changes:
+
+go get github.com/not-empty/omniq-go@v1.30.0
 
 ------------------------------------------------------------------------
 
