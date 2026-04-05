@@ -20,9 +20,13 @@ type RedisLike interface {
 
 	Exists(key string) (int64, error)
 	HGet(key, field string) (*string, error)
+	HGetAll(key string) (map[string]string, error)
 	LLen(key string) (int64, error)
+	SMembers(key string) ([]string, error)
 	ZCard(key string) (int64, error)
 	ZRange(key string, start, end int64) ([]string, error)
+	ZRangeWithScores(key string, start, end int64) ([]MonitorZItem, error)
+	ZRevRangeWithScores(key string, start, end int64) ([]MonitorZItem, error)
 	Get(key string) (*string, error)
 	HMGet(key string, fields ...string) ([]*string, error)
 	ZScore(key, member string) (*float64, error)
@@ -31,14 +35,14 @@ type RedisLike interface {
 }
 
 type RedisConnOpts struct {
-	RedisURL            string
-	Host                string
-	Port                int
-	DB                  int
-	Username            string
-	Password            string
-	SSL                 bool
-	SocketTimeout       *time.Duration
+	RedisURL             string
+	Host                 string
+	Port                 int
+	DB                   int
+	Username             string
+	Password             string
+	SSL                  bool
+	SocketTimeout        *time.Duration
 	SocketConnectTimeout *time.Duration
 }
 
@@ -97,8 +101,16 @@ func (w *redisWrap) HGet(key, field string) (*string, error) {
 	return nil, err
 }
 
+func (w *redisWrap) HGetAll(key string) (map[string]string, error) {
+	return w.rdb.HGetAll(w.ctx(), key).Result()
+}
+
 func (w *redisWrap) LLen(key string) (int64, error) {
 	return w.rdb.LLen(w.ctx(), key).Result()
+}
+
+func (w *redisWrap) SMembers(key string) ([]string, error) {
+	return w.rdb.SMembers(w.ctx(), key).Result()
 }
 
 func (w *redisWrap) ZCard(key string) (int64, error) {
@@ -107,6 +119,38 @@ func (w *redisWrap) ZCard(key string) (int64, error) {
 
 func (w *redisWrap) ZRange(key string, start, end int64) ([]string, error) {
 	return w.rdb.ZRange(w.ctx(), key, start, end).Result()
+}
+
+func (w *redisWrap) ZRangeWithScores(key string, start, end int64) ([]MonitorZItem, error) {
+	rows, err := w.rdb.ZRangeWithScores(w.ctx(), key, start, end).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]MonitorZItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, MonitorZItem{
+			Member: fmt.Sprint(row.Member),
+			Score:  row.Score,
+		})
+	}
+	return out, nil
+}
+
+func (w *redisWrap) ZRevRangeWithScores(key string, start, end int64) ([]MonitorZItem, error) {
+	rows, err := w.rdb.ZRevRangeWithScores(w.ctx(), key, start, end).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]MonitorZItem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, MonitorZItem{
+			Member: fmt.Sprint(row.Member),
+			Score:  row.Score,
+		})
+	}
+	return out, nil
 }
 
 func (w *redisWrap) Get(key string) (*string, error) {
