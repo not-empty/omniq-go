@@ -1,325 +1,199 @@
-# OmniQ (Go)
+# OmniQ - GO
 
-**OmniQ** is a Redis + Lua, language-agnostic job queue.\
-This package is the **Go client** for OmniQ v1.
+Go client for OmniQ, a Redis-based distributed job queue designed for 
+deterministic, consumer-driven job execution and coordination.
 
-Core project / docs: https://github.com/not-empty/omniq
+**OmniQ Go** executes queue logic directly inside Redis using Lua scripts,
+ensuring atomicity, consistency and predictable behavior across distributed
+systems.
 
-------------------------------------------------------------------------
+Instead of treating jobs as transient messages, Omniq maintains explicit
+execution state and coordination primitives Redis, allowing consumers to
+safely manage retries, concurrency, ordering, and distributed processing.
 
-## Key Ideas
+The system is language-agnostic, anabling producers and consumers written in diferrent languages to share the same execution model.
 
--   **Hybrid lanes**
-    -   Ungrouped jobs by default
-    -   Optional grouped jobs (FIFO per group + per-group concurrency)
--   **Lease-based execution**
-    -   Workers reserve a job with a time-limited lease
--   **Token-gated ACK / heartbeat**
-    -   `Reserve()` returns a `leaseToken`
-    -   `Heartbeat()` and `Ack*()` must include the same token
--   **Pause / resume (flag-only)**
-    -   Pausing prevents *new reserves*
-    -   Running jobs are not interrupted
-    -   Jobs are not moved
--   **Admin-safe operations**
-    -   Strict `RetryFailed`, `RetryFailedBatch`, `RemoveJob`,
-        `RemoveJobsBatch`
--   **Handler-driven execution layer**
-    -   `ctx.Exec` exposes internal OmniQ operations safely inside
-        handlers
+Core project and protocol documentation:
+https://github.com/not-empty/omniq
 
 ------------------------------------------------------------------------
 
-## Install
+## Requirements
+To use OmniQ-Go, you must have:
+- Go 1.20+
+- Redis >= 7.0
+- Lua scripting enabled in Redis (default configuration)
+- OmniQ scripts previously loaded into Redis
 
+------------------------------------------------------------------------
+
+## Installation
+In your Go project:
 ``` bash
 go get github.com/not-empty/omniq-go
 ```
 
+The main package will be imported as:
+``` bash
+import "github.com/not-empty/omniq-go
+```
+
 ------------------------------------------------------------------------
 
-## Quick Start
+## Features
 
-### Publish
+- Redis-native execution model:
+  - Queue operations are executed atomically inside Redis using Lua
+- Consumer-driven processing:  
+  - Workers control job reservation and execution lifecycle
+- Deterministc job state:
+  - Explicit handling of job states such as wait, active, failed, and completed
+- Grouped jobs with concurrency control:
+  - FIFO ordering within groups and parallel execution across groups
+- Atomic administrative operations:
+  -  Retry, removal, pause, and batch operations with strong consistency
+- Parent/Child workflow primitive:
+  - Fan-out execution with atomic completion tracking
+- Cross-language compatibility:
+  - Same execution model across different runtimes
+   
+------------------------------------------------------------------------
+
+## Main Concepts
+
+### Execution Model
+- **Jobs** are sent to a queue with data (payload) and a maximum number
+of attempts.
+- Workers reserve job using a **lease** (temporary lock).
+- Execution confirmation (ack) or failure happens based on the handler 
+result.
+- Falied jobs are retried until the configured number of attempts is
+reached.
+
+------------------------------------------------------------------------
+
+## Usage Example
+
+### Initialize Client
 
 ``` go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	// importing the lib
-	"github.com/not-empty/omniq-go"
-
-)
-
-func main() {
-	// creating OmniQ passing redis information
-	client, err := omniq.NewClient(omniq.ClientOpts{
-		Host: "omniq-redis",
-		Port: 6379,
-	})
-	if err != nil {
-		log.Fatalf("create client: %v", err)
-	}
-
-	// publishing the job
-	jobID, err := client.Publish(omniq.PublishOpts{
-		Queue: "demo",
-		Payload: map[string]any{"hello": "world"},
-		MaxAttempts: 3,
-	})
-	if err != nil {
-		log.Fatalf("publish failed: %v", err)
-	}
-
-	fmt.Println("OK", jobID)
+client, err := omniq.NewClient(omniq.ClientOpts{
+	Host: "localhost",
+	Port: 6379,
+})
+if err != nil {
+	log.Fatalf("error creating client: %v", err)
 }
 ```
 
 ------------------------------------------------------------------------
 
-### Publish Structured JSON
+### Publish Jobs
 
 ``` go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	// importing the lib
-	"github.com/not-empty/omniq-go"
-)
-
-// nested struct
-type Customer struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	VIP   bool   `json:"vip"`
+jobId, err := client.Publish(omniq.PublishOpts {
+	Queue: "demo",
+	Payload: map[string]any{"hello": "world"},
+	MaxAttempts: 3,
+})
+if err != nil {
+	log.Fatalf("failed to publish job: %v", err)
 }
+fmt.Println("Published JOb ID: ", jobId)	
+```
 
-// main payload struct
-type OrderCreated struct {
-	OrderID     string     `json:"order_id"`
-	Customer    Customer   `json:"customer"`
-	Amount      int        `json:"amount"`
-	Currency    string     `json:"currency"`
-	Items       []string   `json:"items"`
-	Processed   bool       `json:"processed"`
-	RetryCount  int        `json:"retry_count"`
-	Tags        []string   `json:"tags,omitempty"`
-}
+------------------------------------------------------------------------
 
-func main() {
-	// creating OmniQ passing redis information
-	client, err := omniq.NewClient(omniq.ClientOpts{
-		Host: "omniq-redis",
-		Port: 6379,
-	})
-	if err != nil {
-		log.Fatalf("create client: %v", err)
-	}
+## Consume Jobs
 
-	// creating the advanced payload
-	payload := OrderCreated{
-		OrderID:  "ORD-2026-0001",
-		Customer: Customer{
-			ID:    "CUST-99",
-			Email: "leo@example.com",
-			VIP:   true,
-		},
-		Amount:     1500,
-		Currency:   "USD",
-		Items:      []string{"keyboard", "mouse"},
-		Processed:  false,
-		RetryCount: 0,
-		Tags:       []string{"priority", "online"},
-	}
-
-	// publishing the job using the PublishJson method
-	jobID, err := client.PublishJson(omniq.PublishOpts{
-		Queue:       "orders",
-		Payload:     payload,
-		MaxAttempts: 5,
-		Timeout:     60_000,
-	})
-	if err != nil {
-		log.Fatalf("publish failed: %v", err)
-	}
-
-	fmt.Println("OK", jobID)
+``` go
+err := client.Cosume(omniq.CosumeOpts {
+	Queue: "demo",
+	Handler: func(stx omniq.JObCtx) {
+		var payload struct {
+			Hello string `json:"hello"`
+		}
+		if err := ctx.DecodePayload(&payload); err != nill {
+			panic(err)
+		}
+		log.Println("Processing: ", payload.Hello)
+	},
+})	
+if err != nil {
+	log.Fatalf("consumer error: %v", err)
 }
 ```
+**Handler behavior**
+- If the handler finishes normally, the jobs is considered **successfully executed**.
+- If a `panic(...)` accors, the job will be marked as **failed** and may 
+be retried.
 
 ------------------------------------------------------------------------
 
-### Consume
+# Administrative Operations !!!
+The following queue operations are supported atomically:
+
+## Retry a Falied Job
 
 ``` go
-package main
-
-import (
-	"log"
-	"time"
-
-	// importing the lib
-	"github.com/not-empty/omniq-go"
-)
-
-func main() {
-	// creating OmniQ passing redis information
-	client, err := omniq.NewClient(omniq.ClientOpts{
-		Host: "omniq-redis",
-		Port: 6379,
-	})
-	if err != nil {
-		log.Fatalf("create client: %v", err)
-	}
-
-	// creating the consumer that will listen and execute the actions in your handler
-	err = client.Consume(omniq.ConsumeOpts{
-		Queue: "demo",
-		Verbose: true,
-		Drain: true,
-		Handler: func(ctx omniq.JobCtx) {
-			// Getting payload values
-			type DemoJob struct {
-				Hello  string `json:"hello"`
-			}
-			var p DemoJob
-			if err := ctx.DecodePayload(&p); err != nil {
-				panic("Unable to decode payload")
-			}
-
-			// now you can use the values as you want
-			log.Println(p.Hello)
-
-			// panic("error") you need to trigger a panic to fail the job
-			time.Sleep(2 * time.Second)
-			log.Println("done")
-			return
-		},
-	})
-}
+err := client.RetryFailed("demo", "jobId")
 ```
 
 ------------------------------------------------------------------------
 
-## Handler Context
-
-Inside `handler(ctx)`:
-
--   `Queue`
--   `JobID`
--   `PayloadRaw`
--   `Payload`
--   `Attempt`
--   `LockUntilMs`
--   `LeaseToken`
--   `GID`
--   `Exec` → execution layer (`ctx.Exec`)
-
-------------------------------------------------------------------------
-
-## Handler behavior (Go version)
-
-In Go:
-
-1.  **Success** → just `return`
-2.  **Failure / retry** → `panic(...)`
-3.  Panic is automatically converted into `ACK_FAIL`
-
-Example:
+## Retry in Batch
 
 ``` go
-Handler: func(ctx omniq.JobCtx) {
-    if somethingWentWrong {
-        panic("database error")
-    }
-}
+results, err := client. RetryFailedBatch("demo", []string{"id1", "id2"})
 ```
 
 ------------------------------------------------------------------------
 
-# Administrative Operations
-
-All admin operations are **Lua-backed and atomic**.
-
-## RetryFailed
+## Remove Job
 
 ``` go
-err := client.RetryFailed("demo", "01ABC...")
+err := client.RemoveJob("demo", "jobId", "failed")
 ```
-
--   Works only if job state is `failed`
--   Resets attempt counter
--   Respects grouping rules
 
 ------------------------------------------------------------------------
 
-## RetryFailedBatch
+## Remove Jobs in Batch
 
 ``` go
-results, err := client.RetryFailedBatch("demo", []string{"01A...", "01B..."})
+results, err := client.RemoveJobsBatch("demo", "failed", []string{"id1", "id2"})
 ```
-
--   Max 100 jobs per call
--   Atomic batch
--   Per-job result returned
 
 ------------------------------------------------------------------------
 
-## RemoveJob
+## Pause and Resume / IsPaused Queue
 
 ``` go
-err := client.RemoveJob("demo", "01ABC...", "failed")
-```
-
-Rules:
-
--   Cannot remove active jobs
--   Lane must match job state
--   Group safety preserved
-
-------------------------------------------------------------------------
-
-## RemoveJobsBatch
-
-``` go
-results, err := client.RemoveJobsBatch("demo", "failed", []string{"01A...", "01B..."})
-```
-
--   Max 100 per call
--   Strict lane validation
--   Atomic per batch
-
-------------------------------------------------------------------------
-
-## Pause / Resume / IsPaused
-
-``` go
-client.Pause("demo")
-client.Resume("demo")
+err := client.Pause("demo")
 paused, _ := client.IsPaused("demo")
+err = client.Resume("demo")
 ```
-
-Pause is **flag-only**.\
-Running jobs continue. No job movement occurs.
-
-------------------------------------------------------------------------
-
-# Child Ack Control (Parent / Child Workflows)
-
-A handler-driven primitive for fan-out workflows.
-
-No TTL. Cleanup happens only when counter reaches zero.
+Pausing prevents new reservations; jobs already running continue until
+completion.
 
 ------------------------------------------------------------------------
 
-## Parent Example
+# Grouping (Group IDs - GID)
+Jobs can be published with a **GID** in order to:
+- Maintein FIFO ordering within a group
+- Limit concurrency per group
+- Allow safe parallel execution between groups
+Jobs without a GID are executed fairly across queues.
 
+------------------------------------------------------------------------
+
+## Parent/Child Workflows
+This primitive enables fan-out workflows, where a parent job distributes work across multiple child jobs and tracks completion using an atomic counter stored in Redis.
+
+Each child job acknowledges completion using a shared completion key. The system guarantees that retries or duplicate executions do not corrupt the counter.
+
+When all child jobs complete, the counter reaches zero.
+
+#### Parent Example
 ``` go
 func parent(ctx omniq.JobCtx) {
 
@@ -339,9 +213,7 @@ func parent(ctx omniq.JobCtx) {
 }
 ```
 
-------------------------------------------------------------------------
-
-## Child Example
+#### Child Example
 
 ``` go
 func pageWorker(ctx omniq.JobCtx) {
@@ -367,8 +239,7 @@ func pageWorker(ctx omniq.JobCtx) {
 }
 ```
 
-Properties:
-
+**Properties:**
 -   Idempotent decrement
 -   Safe under retries
 -   Cross-queue safe
@@ -392,10 +263,6 @@ client.Publish(omniq.PublishOpts{
 })
 ```
 
--   FIFO inside group
--   Groups execute in parallel
--   Concurrency limited per group
-
 ------------------------------------------------------------------------
 
 ## Pause and Resume Inside a Handler
@@ -417,6 +284,21 @@ func pauseExample(ctx omniq.JobCtx) {
 
 ------------------------------------------------------------------------
 
+## Best Practices
+1. Idempotent handlers: always consider unexpected re-executions.
+2. Monitoring leases and execution: poorly consigured lease durations may
+cause duplication or timeouts.
+3. Redis sizing: adjust memory and persistence settings according to workload.
+
+------------------------------------------------------------------------
+
+## Versioning and Compatibility
+Changes to the contract (OmniQ protocol) follow **Semantic Versioning**.
+Versions that intruduce incompatible contract changes require a major 
+version increment, and clients must align with that version.
+
+------------------------------------------------------------------------
+
 ## Examples
 
 All examples can be found in the `./examples` folder.
@@ -425,4 +307,5 @@ All examples can be found in the `./examples` folder.
 
 ## License
 
-See the repository license.
+This project is licensed under **GPL-3.0**. 
+See the `LICENSE` file for the complete terms.
