@@ -309,6 +309,7 @@ func buildJobCtx(client *Client, queue string, v ReserveJob, pubDefaults *Publis
         PayloadRaw:  v.Payload,
         Payload:     payloadObj,
         Attempt:     v.Attempt,
+        MaxAttempts: v.MaxAttempts,
         LockUntilMs: v.LockUntilMs,
         LeaseToken:  v.LeaseToken,
         GID:         v.GID,
@@ -391,4 +392,3 @@ func ackFail(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *hear
     }
     safeLog(opts.Logger, fmt.Sprintf("[consume] error job_id=%s => %s", ctx.JobID, errS))
 }
-

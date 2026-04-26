@@ -141,6 +141,22 @@ if err != nil {
 - If a `panic(...)` accors, the job will be marked as **failed** and may 
 be retried.
 
+Handler context includes:
+- `Attempt`
+- `MaxAttempts`
+- `Exec`
+
+Example:
+
+``` go
+func handler(ctx omniq.JobCtx) {
+	isLastAttempt := ctx.Attempt >= ctx.MaxAttempts
+	log.Println("Last attempt?", isLastAttempt)
+}
+```
+
+See `examples/max_attempts` for a complete retry-until-last-attempt flow.
+
 ------------------------------------------------------------------------
 
 # Administrative Operations !!!
