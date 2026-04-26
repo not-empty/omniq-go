@@ -8,6 +8,7 @@ type JobCtx struct {
 	PayloadRaw  string `json:"payload_raw"`
 	Payload     PayloadT `json:"payload"`
 	Attempt     int `json:"attempt"`
+	MaxAttempts int `json:"max_attempts"`
 	LockUntilMs int64 `json:"lock_until_ms"`
 	LeaseToken  string `json:"lease_token"`
 	GID         string `json:"gid"`
@@ -30,6 +31,7 @@ type ReserveJob struct {
 	Payload     string `json:"payload"`
 	LockUntilMs int64 `json:"lock_until_ms"`
 	Attempt     int `json:"attempt"`
+	MaxAttempts int `json:"max_attempts"`
 	GID         string `json:"gid"`
 	LeaseToken  string `json:"lease_token"`
 }

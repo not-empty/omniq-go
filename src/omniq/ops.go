@@ -200,7 +200,7 @@ func (o *OmniqOps) Reserve(queue string, nowMsOverride int64) (ReserveResult, er
 	case "PAUSED":
 		return ReservePaused{Status: "PAUSED"}, nil
 	case "JOB":
-		if len(arr) < 7 {
+		if len(arr) < 8 {
 			return nil, fmt.Errorf("Unexpected RESERVE response: %v", res)
 		}
 
@@ -212,15 +212,19 @@ func (o *OmniqOps) Reserve(queue string, nowMsOverride int64) (ReserveResult, er
 		if err != nil {
 			return nil, fmt.Errorf("Unexpected RESERVE response: %v", res)
 		}
+		maxAttempts, err := toInt(arr[5])
+		if err != nil {
+			return nil, fmt.Errorf("Unexpected RESERVE response: %v", res)
+		}
 
 		gid := ""
-		if arr[5] != nil {
-			gid = AsStr(arr[5])
+		if arr[6] != nil {
+			gid = AsStr(arr[6])
 		}
 
 		lease := ""
-		if arr[6] != nil {
-			lease = AsStr(arr[6])
+		if arr[7] != nil {
+			lease = AsStr(arr[7])
 		}
 
 		return ReserveJob{
@@ -229,6 +233,7 @@ func (o *OmniqOps) Reserve(queue string, nowMsOverride int64) (ReserveResult, er
 			Payload:     AsStr(arr[2]),
 			LockUntilMs: lockUntil,
 			Attempt:     attempt,
+			MaxAttempts: maxAttempts,
 			GID:         gid,
 			LeaseToken:  lease,
 		}, nil
