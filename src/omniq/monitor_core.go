@@ -2,6 +2,7 @@ package omniq
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,6 +90,14 @@ func (m *MonitorCore) base(queue string) (string, bool) {
 		return "", false
 	}
 	return QueueBase(queue), true
+}
+
+func (m *MonitorCore) mustBase(queue string) string {
+	base, ok := m.base(queue)
+	if !ok {
+		panic(fmt.Errorf("invalid queue name"))
+	}
+	return base
 }
 
 func (m *MonitorCore) statsKey(base string) string {
@@ -292,10 +301,7 @@ func (m *MonitorCore) ScanQueues() []string {
 }
 
 func (m *MonitorCore) Stats(queue string) QueueStats {
-	base, ok := m.base(queue)
-	if !ok {
-		return QueueStats{}
-	}
+	base := m.mustBase(queue)
 
 	raw, err := m.r.HGetAll(m.statsKey(base))
 	if err != nil {
@@ -362,10 +368,7 @@ func (m *MonitorCore) GroupsReady(queue string, offset int, limit int) []string 
 }
 
 func (m *MonitorCore) GroupsReadyWithScores(queue string, offset int, limit int) []GroupReady {
-	base, ok := m.base(queue)
-	if !ok {
-		return []GroupReady{}
-	}
+	base := m.mustBase(queue)
 	offset = monitorMax(0, offset)
 	limit = monitorClamp(limit, 1, monitorMaxGroupLimit)
 
@@ -395,10 +398,7 @@ func (m *MonitorCore) GroupsReadyWithScores(queue string, offset int, limit int)
 }
 
 func (m *MonitorCore) GroupStatus(queue string, gids []string, defaultLimit int) []GroupStatus {
-	base, ok := m.base(queue)
-	if !ok {
-		return []GroupStatus{}
-	}
+	base := m.mustBase(queue)
 	if defaultLimit < 1 {
 		defaultLimit = 1
 	}
@@ -455,10 +455,7 @@ func (m *MonitorCore) LanePage(
 	limit int,
 	reverse bool,
 ) []LaneJob {
-	base, ok := m.base(queue)
-	if !ok {
-		return []LaneJob{}
-	}
+	base := m.mustBase(queue)
 	offset = monitorMax(0, offset)
 	limit = monitorClamp(limit, 1, monitorMaxListLimit)
 	key := m.idxKey(base, lane)
@@ -510,10 +507,7 @@ func (m *MonitorCore) LanePage(
 }
 
 func (m *MonitorCore) GetJob(queue string, jobID string) *JobInfo {
-	base, ok := m.base(queue)
-	if !ok {
-		return nil
-	}
+	base := m.mustBase(queue)
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
 		return nil
@@ -529,10 +523,7 @@ func (m *MonitorCore) GetJob(queue string, jobID string) *JobInfo {
 }
 
 func (m *MonitorCore) FindJobs(queue string, lane LaneName, jobIDs []string) []LaneJob {
-	base, ok := m.base(queue)
-	if !ok {
-		return []LaneJob{}
-	}
+	base := m.mustBase(queue)
 	idxKey := m.idxKey(base, lane)
 
 	out := make([]LaneJob, 0, len(jobIDs))

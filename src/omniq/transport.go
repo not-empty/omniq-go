@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -116,6 +117,7 @@ func (w *redisWrap) ScanKeys(match string) ([]string, error) {
 
 	if w.cluster != nil {
 		seen := make(map[string]struct{})
+		var mu sync.Mutex
 
 		err := w.cluster.ForEachMaster(w.ctx(), func(ctx context.Context, c *redis.Client) error {
 			var cursor uint64
@@ -130,7 +132,9 @@ func (w *redisWrap) ScanKeys(match string) ([]string, error) {
 					if strings.TrimSpace(key) == "" {
 						continue
 					}
+					mu.Lock()
 					seen[key] = struct{}{}
+					mu.Unlock()
 				}
 
 				if next == 0 {
