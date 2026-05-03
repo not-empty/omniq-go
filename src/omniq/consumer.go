@@ -276,7 +276,6 @@ func handleReservedJob(
 		opts.Handler(ctx)
 	}()
 
-
 	stopHeartbeater(hb)
 
 	if recovered == nil {
@@ -296,25 +295,25 @@ func handleReservedJob(
 }
 
 func buildJobCtx(client *Client, queue string, v ReserveJob, pubDefaults *PublishOpts) JobCtx {
-    var payloadObj any
-    if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
-        payloadObj = v.Payload
-    }
+	var payloadObj any
+	if err := json.Unmarshal([]byte(v.Payload), &payloadObj); err != nil {
+		payloadObj = v.Payload
+	}
 
-    exec := newExec(client, pubDefaults, v.JobID)
+	exec := newExec(client, pubDefaults, v.JobID)
 
-    return JobCtx{
-        Queue:       queue,
-        JobID:       v.JobID,
-        PayloadRaw:  v.Payload,
-        Payload:     payloadObj,
-        Attempt:     v.Attempt,
-        MaxAttempts: v.MaxAttempts,
-        LockUntilMs: v.LockUntilMs,
-        LeaseToken:  v.LeaseToken,
-        GID:         v.GID,
-        Exec:        exec,
-    }
+	return JobCtx{
+		Queue:       queue,
+		JobID:       v.JobID,
+		PayloadRaw:  v.Payload,
+		Payload:     payloadObj,
+		Attempt:     v.Attempt,
+		MaxAttempts: v.MaxAttempts,
+		LockUntilMs: v.LockUntilMs,
+		LeaseToken:  v.LeaseToken,
+		GID:         v.GID,
+		Exec:        exec,
+	}
 }
 
 func logReceived(opts ConsumeOpts, ctx JobCtx) {
@@ -361,34 +360,34 @@ func ackSuccess(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *h
 }
 
 func ackFail(ops *OmniqOps, opts ConsumeOpts, v ReserveJob, ctx JobCtx, hb *heartbeatHandle, recovered any) {
-    if hb.lost.Load() {
-        return
-    }
+	if hb.lost.Load() {
+		return
+	}
 
-    var errS string
-    switch t := recovered.(type) {
-    case error:
-        errS = fmt.Sprintf("%T: %v", t, t)
-    case string:
-        errS = "panic: " + t
-    default:
-        errS = fmt.Sprintf("panic: %T: %v", recovered, recovered)
-    }
+	var errS string
+	switch t := recovered.(type) {
+	case error:
+		errS = fmt.Sprintf("%T: %v", t, t)
+	case string:
+		errS = "panic: " + t
+	default:
+		errS = fmt.Sprintf("panic: %T: %v", recovered, recovered)
+	}
 
-    res2, err2 := ops.AckFail(opts.Queue, v.JobID, v.LeaseToken, &errS, 0)
+	res2, err2 := ops.AckFail(opts.Queue, v.JobID, v.LeaseToken, &errS, 0)
 
-    if !opts.Verbose {
-        return
-    }
-    if err2 != nil {
-        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail error job_id=%s: %v", ctx.JobID, err2))
-        return
-    }
+	if !opts.Verbose {
+		return
+	}
+	if err2 != nil {
+		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail error job_id=%s: %v", ctx.JobID, err2))
+		return
+	}
 
-    if res2.Status == AckRetry && res2.NextRunAtMs != nil {
-        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => RETRY due_ms=%d", ctx.JobID, *res2.NextRunAtMs))
-    } else {
-        safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => FAILED", ctx.JobID))
-    }
-    safeLog(opts.Logger, fmt.Sprintf("[consume] error job_id=%s => %s", ctx.JobID, errS))
+	if res2.Status == AckRetry && res2.NextRunAtMs != nil {
+		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => RETRY due_ms=%d", ctx.JobID, *res2.NextRunAtMs))
+	} else {
+		safeLog(opts.Logger, fmt.Sprintf("[consume] ack fail job_id=%s => FAILED", ctx.JobID))
+	}
+	safeLog(opts.Logger, fmt.Sprintf("[consume] error job_id=%s => %s", ctx.JobID, errS))
 }

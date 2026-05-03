@@ -11,38 +11,38 @@ type Exec struct {
 	defaultChildID string
 }
 
-func newExec(client *Client, opts *PublishOpts,  defaultChildID string) *Exec {
+func newExec(client *Client, opts *PublishOpts, defaultChildID string) *Exec {
 	return &Exec{client: client, opts: opts, defaultChildID: defaultChildID}
 }
 
 func (c *Exec) Publish(opts PublishOpts) (string, error) {
-    if c != nil && c.opts != nil {
-        if opts.MaxAttempts == 0 {
-            opts.MaxAttempts = c.opts.MaxAttempts
-        }
-        if opts.Timeout == 0 {
-            opts.Timeout = c.opts.Timeout
-        }
-        if opts.Backoff == 0 {
-            opts.Backoff = c.opts.Backoff
-        }
-    }
-    return c.client.Publish(opts)
+	if c != nil && c.opts != nil {
+		if opts.MaxAttempts == 0 {
+			opts.MaxAttempts = c.opts.MaxAttempts
+		}
+		if opts.Timeout == 0 {
+			opts.Timeout = c.opts.Timeout
+		}
+		if opts.Backoff == 0 {
+			opts.Backoff = c.opts.Backoff
+		}
+	}
+	return c.client.Publish(opts)
 }
 
 func (c *Exec) PublishJson(opts PublishOpts) (string, error) {
-    if c != nil && c.opts != nil {
-        if opts.MaxAttempts == 0 {
-            opts.MaxAttempts = c.opts.MaxAttempts
-        }
-        if opts.Timeout == 0 {
-            opts.Timeout = c.opts.Timeout
-        }
-        if opts.Backoff == 0 {
-            opts.Backoff = c.opts.Backoff
-        }
-    }
-    return c.client.PublishJson(opts)
+	if c != nil && c.opts != nil {
+		if opts.MaxAttempts == 0 {
+			opts.MaxAttempts = c.opts.MaxAttempts
+		}
+		if opts.Timeout == 0 {
+			opts.Timeout = c.opts.Timeout
+		}
+		if opts.Backoff == 0 {
+			opts.Backoff = c.opts.Backoff
+		}
+	}
+	return c.client.PublishJson(opts)
 }
 
 func (c *Exec) Pause(queue string) (string, error) {

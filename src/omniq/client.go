@@ -1,9 +1,9 @@
 package omniq
 
 import (
-	"fmt"
-	"errors"
 	"encoding/json"
+	"errors"
+	"fmt"
 )
 
 type Client struct {
@@ -12,7 +12,6 @@ type Client struct {
 
 type ClientOpts struct {
 	Redis      RedisLike
-	RedisURL   string
 	Host       string
 	Port       int
 	DB         int
@@ -33,7 +32,6 @@ func NewClient(opts ClientOpts) (*Client, error) {
 		}
 
 		conn := RedisConnOpts{
-			RedisURL: opts.RedisURL,
 			Host:     opts.Host,
 			Port:     port,
 			DB:       opts.DB,
@@ -145,7 +143,6 @@ func (c *Client) RetryFailed(queue string, jobID string) error {
 func (c *Client) RetryFailedBatch(queue string, jobIDs []string) ([]BatchResult, error) {
 	return c.ops.RetryFailedBatch(queue, jobIDs, 0)
 }
-
 
 func (c *Client) RemoveJob(queue string, jobID string, lane string) (string, error) {
 	return c.ops.RemoveJob(queue, jobID, lane)

@@ -17,14 +17,14 @@ type Customer struct {
 
 // main payload struct
 type OrderCreated struct {
-	OrderID     string     `json:"order_id"`
-	Customer    Customer   `json:"customer"`
-	Amount      int        `json:"amount"`
-	Currency    string     `json:"currency"`
-	Items       []string   `json:"items"`
-	Processed   bool       `json:"processed"`
-	RetryCount  int        `json:"retry_count"`
-	Tags        []string   `json:"tags,omitempty"`
+	OrderID    string   `json:"order_id"`
+	Customer   Customer `json:"customer"`
+	Amount     int      `json:"amount"`
+	Currency   string   `json:"currency"`
+	Items      []string `json:"items"`
+	Processed  bool     `json:"processed"`
+	RetryCount int      `json:"retry_count"`
+	Tags       []string `json:"tags,omitempty"`
 }
 
 func main() {
@@ -39,7 +39,7 @@ func main() {
 
 	// creating the advanced payload
 	payload := OrderCreated{
-		OrderID:  "ORD-2026-0001",
+		OrderID: "ORD-2026-0001",
 		Customer: Customer{
 			ID:    "CUST-99",
 			Email: "leo@example.com",

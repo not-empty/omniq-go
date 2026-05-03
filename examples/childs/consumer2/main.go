@@ -13,13 +13,13 @@ import (
 func pageWorker(ctx omniq.JobCtx) {
 	// Getting payload values
 	type PageJob struct {
-        Key  string `json:"key"`
-        Page int    `json:"page"`
-    }
-    var p PageJob
-    if err := ctx.DecodePayload(&p); err != nil {
-        panic("Unable to decode payload")
-    }
+		Key  string `json:"key"`
+		Page int    `json:"page"`
+	}
+	var p PageJob
+	if err := ctx.DecodePayload(&p); err != nil {
+		panic("Unable to decode payload")
+	}
 
 	fmt.Printf("[page_worker] Processing page %d (job_id=%s)\n", p.Page, ctx.JobID)
 
@@ -34,8 +34,8 @@ func pageWorker(ctx omniq.JobCtx) {
 	fmt.Printf("[page_worker] Page %d done. Remaining=%d\n", p.Page, remaining)
 
 	// remaining will be 0 ONLY when this is the last job
-    // will return > 0 when are still jobs to process
-    // and -1 if something goes wrong with the counter
+	// will return > 0 when are still jobs to process
+	// and -1 if something goes wrong with the counter
 	if remaining == 0 {
 		fmt.Println("[page_worker] Last page finished.")
 	}
@@ -54,9 +54,9 @@ func main() {
 
 	// creating the consumer that will listen and execute the actions in your handler
 	err = client.Consume(omniq.ConsumeOpts{
-		Queue: "pages",
+		Queue:   "pages",
 		Verbose: true,
-		Drain: true,
+		Drain:   true,
 		Handler: pageWorker,
 	})
 	if err != nil {

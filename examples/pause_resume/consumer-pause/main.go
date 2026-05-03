@@ -17,9 +17,9 @@ func main() {
 	}
 
 	err = client.Consume(omniq.ConsumeOpts{
-		Queue: "test",
+		Queue:   "test",
 		Verbose: true,
-		Drain: true,
+		Drain:   true,
 		Handler: func(ctx omniq.JobCtx) {
 			log.Printf("job received: id=%s attempt=%d payload=%v",
 				ctx.JobID, ctx.Attempt, ctx.Payload)

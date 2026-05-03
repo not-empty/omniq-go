@@ -6,7 +6,6 @@ import (
 
 	// importing the lib
 	"github.com/not-empty/omniq-go"
-
 )
 
 func main() {
@@ -21,8 +20,8 @@ func main() {
 
 	// publishing the job
 	jobID, err := client.Publish(omniq.PublishOpts{
-		Queue: "documents",
-		Payload: map[string]any{"document_id": "doc-123", "pages": 5},
+		Queue:       "documents",
+		Payload:     map[string]any{"document_id": "doc-123", "pages": 5},
 		MaxAttempts: 3,
 	})
 	if err != nil {

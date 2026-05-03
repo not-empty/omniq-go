@@ -53,6 +53,43 @@ import "github.com/not-empty/omniq-go
 
 ------------------------------------------------------------------------
 
+## Connection Model
+
+`ClientOpts` uses `Host` and `Port` for Redis connections.
+
+```go
+client, err := omniq.NewClient(omniq.ClientOpts{
+	Host: "127.0.0.1",
+	Port: 6379,
+})
+```
+
+If the target is a Redis Cluster, the Go transport will detect it and use
+cluster mode automatically.
+
+------------------------------------------------------------------------
+
+## Queue Names
+
+Queue names are validated in Go before they reach Redis.
+
+Allowed:
+- letters
+- numbers
+- `.`
+- `_`
+- `-`
+
+Rejected:
+- empty names
+- leading or trailing whitespace
+- `{` or `}`
+- `:`
+- spaces and unsupported characters
+- names longer than `128` chars
+
+------------------------------------------------------------------------
+
 ## Features
 
 - Redis-native execution model:
@@ -156,6 +193,26 @@ func handler(ctx omniq.JobCtx) {
 ```
 
 See `examples/max_attempts` for a complete retry-until-last-attempt flow.
+
+------------------------------------------------------------------------
+
+## Monitoring Discovery
+
+Queue discovery uses `ScanQueues()`, which scans Redis for `*:stats` keys and
+returns normalized queue names.
+
+```go
+monitor, err := omniq.NewMonitor(client)
+if err != nil {
+	log.Fatalf("monitor error: %v", err)
+}
+
+queues := monitor.ScanQueues()
+fmt.Println(queues)
+```
+
+`ScanQueues()` is intended for admin/bootstrap discovery, not for hot-path UI
+polling.
 
 ------------------------------------------------------------------------
 
