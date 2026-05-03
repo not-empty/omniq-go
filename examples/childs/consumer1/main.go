@@ -12,13 +12,13 @@ import (
 func documentWorker(ctx omniq.JobCtx) {
 	// Getting payload values
 	type DocumentJob struct {
-        DocumentID  string `json:"document_id"`
-        Pages 		int    `json:"pages"`
-    }
+		DocumentID string `json:"document_id"`
+		Pages      int    `json:"pages"`
+	}
 	var p DocumentJob
-    if err := ctx.DecodePayload(&p); err != nil {
-        panic("Unable to decode payload")
-    }
+	if err := ctx.DecodePayload(&p); err != nil {
+		panic("Unable to decode payload")
+	}
 
 	key := fmt.Sprintf("document:%s", p.DocumentID)
 
@@ -34,9 +34,9 @@ func documentWorker(ctx omniq.JobCtx) {
 		_, _ = ctx.Exec.Publish(omniq.PublishOpts{
 			Queue: "pages",
 			Payload: map[string]any{
-				"document_id":	p.DocumentID,
-				"page":			page,
-				"key": 			key,
+				"document_id": p.DocumentID,
+				"page":        page,
+				"key":         key,
 			},
 		})
 		if err != nil {
@@ -60,9 +60,9 @@ func main() {
 
 	// creating the consumer that will listen and execute the actions in your handler
 	err = client.Consume(omniq.ConsumeOpts{
-		Queue: "documents",
+		Queue:   "documents",
 		Verbose: true,
-		Drain: true,
+		Drain:   true,
 		Handler: documentWorker,
 	})
 

@@ -2,6 +2,7 @@ package omniq
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +17,7 @@ type monitorRedis interface {
 	Exists(key string) (int64, error)
 	Get(key string) (*string, error)
 	LLen(key string) (int64, error)
-	SMembers(key string) ([]string, error)
+	ScanKeys(match string) ([]string, error)
 	HGetAll(key string) (map[string]string, error)
 	ZScore(key, member string) (*float64, error)
 	ZRangeWithScores(key string, start, end int64) ([]MonitorZItem, error)
@@ -39,8 +40,8 @@ func (w *monitorRedisWrap) LLen(key string) (int64, error) {
 	return w.r.LLen(key)
 }
 
-func (w *monitorRedisWrap) SMembers(key string) ([]string, error) {
-	return w.r.SMembers(key)
+func (w *monitorRedisWrap) ScanKeys(match string) ([]string, error) {
+	return w.r.ScanKeys(match)
 }
 
 func (w *monitorRedisWrap) HGetAll(key string) (map[string]string, error) {
@@ -64,9 +65,9 @@ type MonitorCore struct {
 }
 
 const (
-	monitorQueueRegistry = "omniq:queues"
-	monitorMaxListLimit  = 25
-	monitorMaxGroupLimit = 500
+	monitorQueueScanMatch = "*:stats"
+	monitorMaxListLimit   = 25
+	monitorMaxGroupLimit  = 500
 )
 
 func NewMonitorCore(client *Client) (*MonitorCore, error) {
@@ -84,8 +85,19 @@ func NewMonitorCore(client *Client) (*MonitorCore, error) {
 	}, nil
 }
 
-func (m *MonitorCore) base(queue string) string {
-	return QueueBase(queue)
+func (m *MonitorCore) base(queue string) (string, bool) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return "", false
+	}
+	return QueueBase(queue), true
+}
+
+func (m *MonitorCore) mustBase(queue string) string {
+	base, ok := m.base(queue)
+	if !ok {
+		panic(fmt.Errorf("invalid queue name"))
+	}
+	return base
 }
 
 func (m *MonitorCore) statsKey(base string) string {
@@ -254,19 +266,34 @@ func (m *MonitorCore) laneJobFromMap(
 	}
 }
 
-func (m *MonitorCore) ListQueues() []string {
-	bases, err := m.r.SMembers(monitorQueueRegistry)
+func (m *MonitorCore) ScanQueues() []string {
+	keys, err := m.r.ScanKeys(monitorQueueScanMatch)
 	if err != nil {
 		return []string{}
 	}
 
-	out := make([]string, 0, len(bases))
-	for _, x := range bases {
+	out := make([]string, 0, len(keys))
+	seen := make(map[string]struct{})
+	for _, x := range keys {
 		s := strings.TrimSpace(x)
-		if s == "" {
+		if s == "" || !strings.HasSuffix(s, ":stats") {
 			continue
 		}
-		out = append(out, monitorNormalizeQueueName(s))
+
+		base := s[:len(s)-len(":stats")]
+		name := monitorNormalizeQueueName(base)
+		if name == "" {
+			continue
+		}
+		if _, err := ValidateQueueName(name); err != nil {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+
+		seen[name] = struct{}{}
+		out = append(out, name)
 	}
 
 	sort.Strings(out)
@@ -274,7 +301,7 @@ func (m *MonitorCore) ListQueues() []string {
 }
 
 func (m *MonitorCore) Stats(queue string) QueueStats {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 
 	raw, err := m.r.HGetAll(m.statsKey(base))
 	if err != nil {
@@ -315,7 +342,7 @@ func (m *MonitorCore) Stats(queue string) QueueStats {
 func (m *MonitorCore) StatsMany(queues []string) []QueueStats {
 	target := queues
 	if target == nil {
-		target = m.ListQueues()
+		target = m.ScanQueues()
 	}
 
 	out := make([]QueueStats, 0, len(target))
@@ -341,7 +368,7 @@ func (m *MonitorCore) GroupsReady(queue string, offset int, limit int) []string 
 }
 
 func (m *MonitorCore) GroupsReadyWithScores(queue string, offset int, limit int) []GroupReady {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 	offset = monitorMax(0, offset)
 	limit = monitorClamp(limit, 1, monitorMaxGroupLimit)
 
@@ -371,7 +398,7 @@ func (m *MonitorCore) GroupsReadyWithScores(queue string, offset int, limit int)
 }
 
 func (m *MonitorCore) GroupStatus(queue string, gids []string, defaultLimit int) []GroupStatus {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 	if defaultLimit < 1 {
 		defaultLimit = 1
 	}
@@ -428,7 +455,7 @@ func (m *MonitorCore) LanePage(
 	limit int,
 	reverse bool,
 ) []LaneJob {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 	offset = monitorMax(0, offset)
 	limit = monitorClamp(limit, 1, monitorMaxListLimit)
 	key := m.idxKey(base, lane)
@@ -480,7 +507,7 @@ func (m *MonitorCore) LanePage(
 }
 
 func (m *MonitorCore) GetJob(queue string, jobID string) *JobInfo {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
 		return nil
@@ -496,7 +523,7 @@ func (m *MonitorCore) GetJob(queue string, jobID string) *JobInfo {
 }
 
 func (m *MonitorCore) FindJobs(queue string, lane LaneName, jobIDs []string) []LaneJob {
-	base := m.base(queue)
+	base := m.mustBase(queue)
 	idxKey := m.idxKey(base, lane)
 
 	out := make([]LaneJob, 0, len(jobIDs))

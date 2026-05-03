@@ -6,15 +6,44 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-func QueueBase(queueName string) string {
-	if containsHashTag(queueName) {
-		return queueName
+const QueueNameMaxLen = 128
+
+var queueNameRE = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+func ValidateQueueName(queueName string) (string, error) {
+	value := queueName
+
+	if value == "" {
+		return "", fmt.Errorf("queue name is required")
 	}
-	return "{" + queueName + "}"
+
+	if value != strings.TrimSpace(value) {
+		return "", fmt.Errorf("queue name must not have leading or trailing whitespace")
+	}
+
+	if len(value) > QueueNameMaxLen {
+		return "", fmt.Errorf("queue name too long (max %d chars)", QueueNameMaxLen)
+	}
+
+	if !queueNameRE.MatchString(value) {
+		return "", fmt.Errorf("queue name contains invalid characters; allowed: letters, numbers, '.', '_', '-'")
+	}
+
+	return value, nil
+}
+
+func QueueBase(queueName string) string {
+	value, err := ValidateQueueName(queueName)
+	if err != nil {
+		return "{" + strings.TrimSpace(queueName) + "}"
+	}
+
+	return "{" + value + "}"
 }
 
 func QueueAnchor(queueName string) string {
@@ -34,19 +63,6 @@ func AsStr(v any) string {
 	default:
 		return fmt.Sprint(v)
 	}
-}
-
-func containsHashTag(s string) bool {
-	hasOpen := false
-	for _, r := range s {
-		if r == '{' {
-			hasOpen = true
-		}
-		if hasOpen && r == '}' {
-			return true
-		}
-	}
-	return false
 }
 
 func asAnySlice(v any) ([]any, bool) {
@@ -156,5 +172,5 @@ func ChildsAnchor(key string) (string, error) {
 }
 
 func (c JobCtx) DecodePayload(dst any) error {
-    return json.Unmarshal([]byte(c.PayloadRaw), dst)
+	return json.Unmarshal([]byte(c.PayloadRaw), dst)
 }

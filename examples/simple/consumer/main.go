@@ -20,13 +20,13 @@ func main() {
 
 	// creating the consumer that will listen and execute the actions in your handler
 	err = client.Consume(omniq.ConsumeOpts{
-		Queue: "demo",
+		Queue:   "demo",
 		Verbose: true,
-		Drain: true,
+		Drain:   true,
 		Handler: func(ctx omniq.JobCtx) {
 			// Getting payload values
 			type DemoJob struct {
-				Hello  string `json:"hello"`
+				Hello string `json:"hello"`
 			}
 			var p DemoJob
 			if err := ctx.DecodePayload(&p); err != nil {

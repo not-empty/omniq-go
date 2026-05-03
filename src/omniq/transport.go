@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -22,7 +24,7 @@ type RedisLike interface {
 	HGet(key, field string) (*string, error)
 	HGetAll(key string) (map[string]string, error)
 	LLen(key string) (int64, error)
-	SMembers(key string) ([]string, error)
+	ScanKeys(match string) ([]string, error)
 	ZCard(key string) (int64, error)
 	ZRange(key string, start, end int64) ([]string, error)
 	ZRangeWithScores(key string, start, end int64) ([]MonitorZItem, error)
@@ -35,7 +37,6 @@ type RedisLike interface {
 }
 
 type RedisConnOpts struct {
-	RedisURL             string
 	Host                 string
 	Port                 int
 	DB                   int
@@ -63,7 +64,9 @@ func looksLikeClusterError(err error) bool {
 }
 
 type redisWrap struct {
-	rdb redis.Cmdable
+	rdb     redis.Cmdable
+	client  *redis.Client
+	cluster *redis.ClusterClient
 }
 
 func (w *redisWrap) ctx() context.Context { return context.Background() }
@@ -109,8 +112,78 @@ func (w *redisWrap) LLen(key string) (int64, error) {
 	return w.rdb.LLen(w.ctx(), key).Result()
 }
 
-func (w *redisWrap) SMembers(key string) ([]string, error) {
-	return w.rdb.SMembers(w.ctx(), key).Result()
+func (w *redisWrap) ScanKeys(match string) ([]string, error) {
+	const scanCount int64 = 200
+
+	if w.cluster != nil {
+		seen := make(map[string]struct{})
+		var mu sync.Mutex
+
+		err := w.cluster.ForEachMaster(w.ctx(), func(ctx context.Context, c *redis.Client) error {
+			var cursor uint64
+
+			for {
+				keys, next, err := c.Scan(ctx, cursor, match, scanCount).Result()
+				if err != nil {
+					return err
+				}
+
+				for _, key := range keys {
+					if strings.TrimSpace(key) == "" {
+						continue
+					}
+					mu.Lock()
+					seen[key] = struct{}{}
+					mu.Unlock()
+				}
+
+				if next == 0 {
+					break
+				}
+				cursor = next
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		out := make([]string, 0, len(seen))
+		for key := range seen {
+			out = append(out, key)
+		}
+		sort.Strings(out)
+		return out, nil
+	}
+
+	if w.client != nil {
+		var cursor uint64
+		out := make([]string, 0)
+
+		for {
+			keys, next, err := w.client.Scan(w.ctx(), cursor, match, scanCount).Result()
+			if err != nil {
+				return nil, err
+			}
+
+			for _, key := range keys {
+				if strings.TrimSpace(key) == "" {
+					continue
+				}
+				out = append(out, key)
+			}
+
+			if next == 0 {
+				break
+			}
+			cursor = next
+		}
+
+		return out, nil
+	}
+
+	return []string{}, nil
 }
 
 func (w *redisWrap) ZCard(key string) (int64, error) {
@@ -202,31 +275,8 @@ func redisArgsToAny(args []RedisArg) []any {
 }
 
 func BuildRedisClient(opts RedisConnOpts) (RedisLike, error) {
-	if opts.RedisURL != "" {
-		ropts, err := redis.ParseURL(opts.RedisURL)
-		if err != nil {
-			return nil, fmt.Errorf("parse redis_url: %w", err)
-		}
-		if opts.SSL && ropts.TLSConfig == nil {
-			ropts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		}
-		if opts.SocketTimeout != nil {
-			ropts.ReadTimeout = *opts.SocketTimeout
-			ropts.WriteTimeout = *opts.SocketTimeout
-		}
-		if opts.SocketConnectTimeout != nil {
-			ropts.DialTimeout = *opts.SocketConnectTimeout
-		}
-
-		c := redis.NewClient(ropts)
-		if err := c.Ping(context.Background()).Err(); err != nil {
-			return nil, err
-		}
-		return &redisWrap{rdb: c}, nil
-	}
-
 	if opts.Host == "" {
-		return nil, fmt.Errorf("RedisConnOpts requires host (or redis_url)")
+		return nil, fmt.Errorf("RedisConnOpts requires host")
 	}
 
 	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
@@ -248,7 +298,7 @@ func BuildRedisClient(opts RedisConnOpts) (RedisLike, error) {
 
 		err := c.Ping(context.Background()).Err()
 		if err == nil {
-			return &redisWrap{rdb: c}, nil
+			return &redisWrap{rdb: c, cluster: c}, nil
 		}
 		_ = c.Close()
 
@@ -271,7 +321,7 @@ func BuildRedisClient(opts RedisConnOpts) (RedisLike, error) {
 	if err := c.Ping(context.Background()).Err(); err != nil {
 		return nil, err
 	}
-	return &redisWrap{rdb: c}, nil
+	return &redisWrap{rdb: c, client: c}, nil
 }
 
 func durOrZero(d *time.Duration) time.Duration {

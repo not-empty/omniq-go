@@ -32,22 +32,25 @@ func (o *OmniqOps) evalShaWithNoScriptFallback(sha, src string, numkeys int, key
 }
 
 type PublishOpts struct {
-	Queue         	string
-	Payload       	any
-	JobID         	string
-	MaxAttempts   	int
-	Timeout			int64
-	Backoff			int64
-	DueMs         	int64
-	NowMsOverride 	int64
-	GID           	string
-	GroupLimit    	int
+	Queue         string
+	Payload       any
+	JobID         string
+	MaxAttempts   int
+	Timeout       int64
+	Backoff       int64
+	DueMs         int64
+	NowMsOverride int64
+	GID           string
+	GroupLimit    int
 }
 
 func (o *OmniqOps) Publish(opts PublishOpts) (string, error) {
 	// Validate required inputs (match Python "named args" safety).
 	if strings.TrimSpace(opts.Queue) == "" {
 		return "", errors.New("publish(queue=...) is required")
+	}
+	if _, err := ValidateQueueName(opts.Queue); err != nil {
+		return "", err
 	}
 	if opts.Payload == nil {
 		return "", errors.New("publish(payload=...) is required")
@@ -133,6 +136,9 @@ func (o *OmniqOps) Publish(opts PublishOpts) (string, error) {
 }
 
 func (o *OmniqOps) Pause(queue string) (string, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return "", err
+	}
 	anchor := QueueAnchor(queue)
 	res, err := o.evalShaWithNoScriptFallback(
 		o.Scripts.Pause.SHA,
@@ -147,6 +153,9 @@ func (o *OmniqOps) Pause(queue string) (string, error) {
 }
 
 func (o *OmniqOps) Resume(queue string) (int, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return 0, err
+	}
 	anchor := QueueAnchor(queue)
 	res, err := o.evalShaWithNoScriptFallback(
 		o.Scripts.Resume.SHA,
@@ -162,6 +171,9 @@ func (o *OmniqOps) Resume(queue string) (int, error) {
 }
 
 func (o *OmniqOps) IsPaused(queue string) (bool, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return false, err
+	}
 	base := QueueBase(queue)
 	n, err := o.R.Exists(base + ":paused")
 	if err != nil {
@@ -171,6 +183,9 @@ func (o *OmniqOps) IsPaused(queue string) (bool, error) {
 }
 
 func (o *OmniqOps) Reserve(queue string, nowMsOverride int64) (ReserveResult, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return nil, err
+	}
 	anchor := QueueAnchor(queue)
 
 	nms := nowMsOverride
@@ -243,6 +258,9 @@ func (o *OmniqOps) Reserve(queue string, nowMsOverride int64) (ReserveResult, er
 }
 
 func (o *OmniqOps) Heartbeat(queue, jobID, leaseToken string, nowMsOverride int64) (int64, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return 0, err
+	}
 	anchor := QueueAnchor(queue)
 
 	nms := nowMsOverride
@@ -292,6 +310,9 @@ func (o *OmniqOps) Heartbeat(queue, jobID, leaseToken string, nowMsOverride int6
 }
 
 func (o *OmniqOps) AckSuccess(queue, jobID, leaseToken string, nowMsOverride int64) error {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return err
+	}
 	anchor := QueueAnchor(queue)
 
 	nms := nowMsOverride
@@ -334,6 +355,9 @@ func (o *OmniqOps) AckSuccess(queue, jobID, leaseToken string, nowMsOverride int
 }
 
 func (o *OmniqOps) AckFail(queue, jobID, leaseToken string, errMsg *string, nowMsOverride int64) (AckFailResult, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return AckFailResult{}, err
+	}
 	anchor := QueueAnchor(queue)
 
 	nms := nowMsOverride
@@ -393,6 +417,9 @@ func (o *OmniqOps) AckFail(queue, jobID, leaseToken string, errMsg *string, nowM
 }
 
 func (o *OmniqOps) PromoteDelayed(queue string, maxPromote int, nowMsOverride int64) (int, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return 0, err
+	}
 	if maxPromote <= 0 {
 		maxPromote = 1000
 	}
@@ -429,6 +456,9 @@ func (o *OmniqOps) PromoteDelayed(queue string, maxPromote int, nowMsOverride in
 }
 
 func (o *OmniqOps) ReapExpired(queue string, maxReap int, nowMsOverride int64) (int, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return 0, err
+	}
 	if maxReap <= 0 {
 		maxReap = 1000
 	}
@@ -465,6 +495,9 @@ func (o *OmniqOps) ReapExpired(queue string, maxReap int, nowMsOverride int64) (
 }
 
 func (o *OmniqOps) JobTimeout(queue, jobID string, defaultMs int64) (int64, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return 0, err
+	}
 	if defaultMs <= 0 {
 		defaultMs = 60_000
 	}
@@ -489,6 +522,9 @@ func (o *OmniqOps) JobTimeout(queue, jobID string, defaultMs int64) (int64, erro
 }
 
 func (o *OmniqOps) RetryFailed(queue, jobID string, nowMsOverride int64) error {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return err
+	}
 	anchor := QueueAnchor(queue)
 
 	nms := nowMsOverride
@@ -530,6 +566,9 @@ func (o *OmniqOps) RetryFailed(queue, jobID string, nowMsOverride int64) error {
 }
 
 func (o *OmniqOps) RetryFailedBatch(queue string, jobIDs []string, nowMsOverride int64) ([]BatchResult, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return nil, err
+	}
 	if len(jobIDs) > 100 {
 		return nil, fmt.Errorf("retry_failed_batch max is 100 job_ids per call")
 	}
@@ -602,6 +641,9 @@ func (o *OmniqOps) RetryFailedBatch(queue string, jobIDs []string, nowMsOverride
 }
 
 func (o *OmniqOps) RemoveJob(queue, jobID, lane string) (string, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return "", err
+	}
 	anchor := QueueAnchor(queue)
 
 	res, err := o.evalShaWithNoScriptFallback(
@@ -638,6 +680,9 @@ func (o *OmniqOps) RemoveJob(queue, jobID, lane string) (string, error) {
 }
 
 func (o *OmniqOps) RemoveJobsBatch(queue string, lane string, jobIDs []string) ([]BatchResult, error) {
+	if _, err := ValidateQueueName(queue); err != nil {
+		return nil, err
+	}
 	if len(jobIDs) > 100 {
 		return nil, fmt.Errorf("remove_jobs_batch max is 100 job_ids per call")
 	}

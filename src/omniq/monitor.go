@@ -15,8 +15,8 @@ func NewMonitor(client *Client) (*Monitor, error) {
 	}, nil
 }
 
-func (m *Monitor) ListQueues() []string {
-	return m.core.ListQueues()
+func (m *Monitor) ScanQueues() []string {
+	return m.core.ScanQueues()
 }
 
 func (m *Monitor) Stats(queue string) QueueStats {
